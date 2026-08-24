@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="A lava lamp simulated from its actual physics: thermal buoyancy, a density crossover, and interfacial tension." />
+    <meta property="og:title" content="Lava Lamp Lab — 3D" />
+    <meta property="og:description" content="Why a lava lamp works, and the narrow temperature window in which it does." />
+    <meta property="og:type" content="website" />
+    <title>Lava Lamp Lab — 3D</title>
+    <link rel="stylesheet" href="style.css" />
+    <script type="module" src="js/main.js"></script>
+  </head>
+  <body>
+    <main id="app">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">BUOYANCY-DRIVEN TWO-PHASE CONVECTION</p>
+          <h1>Lava Lamp Lab <span>3D</span></h1>
+        </div>
+        <div class="topbar-actions">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span id="renderer-status">Starting WebGL2…</span>
+          <button id="reset-view" class="quiet-button" type="button">Reset view</button>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <div class="viewport-shell" id="viewport">
+          <canvas id="lamp-canvas" aria-label="Three-dimensional lava lamp"></canvas>
+          <div class="viewport-hud" aria-live="polite">
+            <span>lamp clock <strong id="hud-clock">0:00</strong></span>
+            <span><strong id="hud-blobs">0</strong> blobs</span>
+            <span><strong id="hud-rise">0.0</strong> cm/s</span>
+            <span><strong id="hud-fps">60</strong> fps</span>
+          </div>
+          <div class="viewport-state" id="hud-window">warming up</div>
+          <div class="view-hint">Drag to orbit · scroll to zoom</div>
+        </div>
+
+        <aside class="control-panel" aria-label="Lamp controls">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">LAMP</p>
+              <h2>Controls</h2>
+            </div>
+            <div class="panel-actions">
+              <button id="toggle" class="primary-button" type="button">Pause</button>
+            </div>
+          </div>
+
+          <div class="readout" id="readout">
+            <div class="ladder">
+              <div><span>plate</span><strong id="r-plate">22.0</strong></div>
+              <div><span>base</span><strong id="r-base">22.0</strong></div>
+              <div><span>bulk</span><strong id="r-bulk">22.0</strong></div>
+              <div><span>top</span><strong id="r-top">22.0</strong></div>
+            </div>
+            <p class="readout-line">
+              crossover <strong id="r-cross">49.1 °C</strong> — wax and fluid
+              weigh the same here
+            </p>
+            <p class="readout-line">
+              lifts above <strong id="r-rise">—</strong> at the base ·
+              sinks below <strong id="r-sink">—</strong> at the top
+            </p>
+            <p class="readout-line dim">
+              blob radius <strong id="r-blob">—</strong> ·
+              capillary length <strong id="r-cap">—</strong> ·
+              <span id="r-molten">0%</span> molten
+            </p>
+            <p class="readout-line dim">
+              solver <strong id="r-dt">—</strong> · velocity clamp
+              <strong id="r-clamp">none</strong>
+            </p>
+            <p class="readout-line dim" id="r-res">—</p>
+          </div>
+
+          <div class="button-row">
+            <button id="warm" class="splash-button" type="button">Warm start</button>
+            <button id="cold" class="quiet-button wide" type="button">Cold start</button>
+          </div>
+          <div class="button-row">
+            <button id="ff" class="quiet-button wide" type="button">Fast-forward warm-up</button>
+            <button id="shake" class="quiet-button wide" type="button">Shake it</button>
+          </div>
+
+          <label for="bulb-input">
+            <span>Bulb <output id="bulb-output">25 W</output></span>
+            <input id="bulb-input" type="range" min="10" max="50" step="5" value="25" />
+          </label>
+          <label for="room-input">
+            <span>Room <output id="room-output">22 °C</output></span>
+            <input id="room-input" type="range" min="6" max="34" step="0.5" value="22" />
+          </label>
+          <label for="drho-input">
+            <span>Wax excess density <output id="drho-output">11 kg/m³</output></span>
+            <input id="drho-input" type="range" min="3" max="22" step="0.5" value="11" />
+          </label>
+          <label for="sigma-input">
+            <span>Interfacial tension <output id="sigma-output">4.5 mN/m</output></span>
+            <input id="sigma-input" type="range" min="0.6" max="9" step="0.1" value="4.5" />
+          </label>
+          <label for="visc-input">
+            <span>Fluid viscosity <output id="visc-output">10 mPa·s</output></span>
+            <input id="visc-input" type="range" min="2" max="34" step="1" value="10" />
+          </label>
+          <label for="wax-input">
+            <span>Wax charge <output id="wax-output">60 mL</output></span>
+            <input id="wax-input" type="range" min="25" max="140" step="5" value="60" />
+          </label>
+          <label for="particles-input">
+            <span>Particles <output id="particles-output">1,800</output></span>
+            <input id="particles-input" type="range" min="900" max="4000" step="100" value="1800" />
+          </label>
+
+          <div class="select-row">
+            <label for="time-input">
+              <span>Time</span>
+              <select id="time-input">
+                <option value="1" selected>real time</option>
+                <option value="2">×2</option>
+                <option value="4">×4</option>
+              </select>
+            </label>
+            <label for="solver-input">
+              <span>Solver passes</span>
+              <select id="solver-input">
+                <option value="2">Fast · 2</option>
+                <option value="3" selected>Balanced · 3</option>
+                <option value="4">Smooth · 4</option>
+              </select>
+            </label>
+          </div>
+          <div class="select-row">
+            <label for="view-input">
+              <span>View</span>
+              <select id="view-input">
+                <option value="0" selected>Lamp</option>
+                <option value="1">Temperature</option>
+                <option value="2">Rise / sink</option>
+              </select>
+            </label>
+            <label for="palette-input">
+              <span>Colourway</span>
+              <select id="palette-input">
+                <option value="classic" selected>Red on gold</option>
+                <option value="tangerine">Tangerine on teal</option>
+                <option value="violet">Yellow on violet</option>
+                <option value="glacier">White on blue</option>
+                <option value="absinthe">Absinthe</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="gradient-key" aria-label="Colour scale">
+            <span id="key-lo">COOL</span>
+            <div id="key-bar"></div>
+            <span id="key-hi">HOT</span>
+          </div>
+
+          <p class="footnote">
+            Everything on this panel is a physical quantity in SI units. The lamp
+            runs on thermal buoyancy against a density crossover; nothing is
+            animated. See <a href="docs/PHYSICS.md">the physics notes</a>.
+          </p>
+        </aside>
+      </section>
+    </main>
+  </body>
+</html>
