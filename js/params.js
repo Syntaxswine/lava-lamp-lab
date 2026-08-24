@@ -150,16 +150,31 @@ export const SOLVER = {
   hFactor: 2.0,             // smoothing length = hFactor * particle spacing
   relaxEps: 1.0e-6,         // CFM relaxation, as a fraction of |grad C|^2
   scorr: 0.05,              // artificial pressure, as a fraction of lambda
-  cohK: 16.1,               // calibrated: see tools/calibrate-sigma.mjs
-                            // At 16.1 the settled puddle reads 3.0 mN/m against
-                            // the 3.0 mN/m asked for, over the reduced gravities
-                            // the particle spacing can resolve. Two residuals
-                            // are known and not hidden: the measured thickness
-                            // runs ~10% high because where an SPH free surface
-                            // actually lies is ambiguous to about half a particle
-                            // radius, and the fitted exponent is -0.42 rather
-                            // than -0.50 because the thinner puddles approach
-                            // that same floor.
+  cohK: 16.1,               // KNOWN WRONG AT THE SHIPPING SPACING -- see below.
+                            //
+                            // Fitted by tools/calibrate-sigma.mjs when
+                            // IFACE.sigma was 3.0 mN/m and the calibration
+                            // puddle ran at a 2.15 mm particle spacing. There it
+                            // read sigma_eff = 3.0 against the 3.0 asked for.
+                            //
+                            // sigma is now 4.5 and the lamp runs at a 3.22 mm
+                            // spacing, and re-measuring AT THAT SPACING gives
+                            // sigma_eff = 1.9 mN/m -- 2.4x below nominal. The
+                            // direction is exactly what the scaling flaw
+                            // predicts: the per-pair cohesion acceleration goes
+                            // as dx^-2 while the Laplace-pressure argument asks
+                            // for dx^-1, so effective tension falls as the
+                            // spacing grows. Pairwise SPH surface tension is
+                            // resolution dependent and this coefficient does not
+                            // carry between resolutions.
+                            //
+                            // NOT retuned in place, because it is not a one-line
+                            // change: raising cohK ~2.4x raises the stiffness,
+                            // which tightens the capillary CFL by sqrt(2.4) and
+                            // takes the solver from 41 Hz to ~64 Hz, the frame
+                            // budget from 39% to ~60%, and changes blob
+                            // detachment -- invalidating every measured number in
+                            // the handoff. BACKLOG.md item 1.
   curvK: 0.55,              // Akinci curvature-minimisation weight
   xsph: 0.0,                // extra XSPH smoothing per SECOND (0 = physical mu only)
   Cd: 1.0,                  // drag coefficient of a wobbling drop (Clift et al.)

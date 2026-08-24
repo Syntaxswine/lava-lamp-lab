@@ -98,8 +98,14 @@ the floored value came out as a confident *resolved* about a quantity that was
 never measured.
 
 Everything calibrated is labelled as calibrated, in `js/params.js`, next to what
-it was calibrated against. Two of those coefficients had to be refitted when the
-globe was rescaled, which is said out loud where they are defined.
+it was calibrated against — **including the one that is currently wrong.** The
+cohesion coefficient was fitted at a 2.15 mm particle spacing and the lamp ships
+at 3.22 mm; re-measured there, the effective interfacial tension is 1.9 mN/m
+against a nominal 4.5. Pairwise SPH surface tension is resolution dependent, the
+direction matches the known `dx^-2` vs `dx^-1` scaling flaw, and fixing it moves
+the timestep and every measured number with it. It is written up in PHYSICS.md
+§4.6 and is the top item in [BACKLOG.md](BACKLOG.md) rather than quietly
+retuned.
 
 ## Known limits
 
@@ -111,9 +117,18 @@ the moment you move them. The first configuration tried, a 16.3-inch globe with
 particles.
 
 The blob count is one, not six. At 60 mL a fully coalesced mass is a 24 mm sphere
-in a 33 mm bore; it cycles cleanly on a measured **128-second period**, which is
-a real lava lamp mode but not the busiest one. A five-blob population needs a
-particle count the CFL scaling puts out of reach.
+in a 33 mm bore, and a five-blob population needs a particle count the CFL
+scaling puts out of reach.
+
+**And it does not cycle reliably.** Three warm-start runs of the identical
+configuration: one resolved a 128 s period, two refused to name one at all — 8
+transit samples out of 88 across 22 minutes of lamp time. The instrument was
+right to refuse each time. The cause is the shipping configuration sitting on the
+**lower edge of its own window rule**: the pool equilibrates at 47.6 °C against a
+47.9 °C rise threshold, so the crossing is governed by a residual heating rate of
+a few hundredths of a kelvin per minute and the dwell dominates everything. Also
+nothing is seeded, so no two runs are the same run. Both are in
+[BACKLOG.md](BACKLOG.md).
 
 Full model, closures, calibrations and the rest:
 [docs/PHYSICS.md](docs/PHYSICS.md).

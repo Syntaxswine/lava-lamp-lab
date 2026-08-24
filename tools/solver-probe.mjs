@@ -23,7 +23,7 @@ let nb = 0;
 for (let i = 0; i < w.n; i++) nb += w.nbrCount[i];
 console.log(`lattice: mean neighbours ${(nb / w.n).toFixed(1)}`);
 
-const dt = 1 / 60;
+const dt = lamp.physDt();
 console.log('step   maxSpeed  maxDisp   rho/rho0 lo..hi   clamps  com');
 for (let s = 1; s <= steps; s++) {
   const x0 = Float32Array.from(w.y);

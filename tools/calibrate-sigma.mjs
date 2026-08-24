@@ -41,8 +41,23 @@
 import { Wax } from '../js/wax.js';
 import { WAX, IFACE, SOLVER, GEO, AQ } from '../js/params.js';
 
-const n = Number(process.argv[2] ?? 2400);
+const n = Number(process.argv[2] ?? 840);
 if (process.argv[3]) SOLVER.cohK = Number(process.argv[3]);
+
+// CALIBRATE AT THE SPACING THE LAMP RUNS AT.
+//
+// Pairwise SPH surface tension is resolution dependent: the per-pair cohesion
+// acceleration scales as dx^-2 while the Laplace-pressure argument asks for
+// dx^-1, so sigma_eff moves when the particle spacing moves. Calibrating on a
+// puddle at one spacing and then running the lamp at another means the number in
+// params.js describes a configuration nobody uses. The puddle volume is therefore
+// derived from the lamp's own volume-per-particle rather than fixed.
+//
+// That constrains the test: the puddle has to stay narrower than the globe it is
+// confined by, which caps n. 840 particles at the lamp spacing gives a 28 mL
+// puddle about 20 mm across at the gravities below -- wide relative to its own
+// thickness, and clear of the 27.5 mm wall.
+const SPACING3 = WAX.volume / SOLVER.particles;    // m^3 per particle, as shipped
 
 const T0 = 45;
 const bath = {
@@ -83,6 +98,15 @@ function puddle(volume, gRed, seconds = 10) {
   const env = {
     reducedG: gRed, noHeat: true, sigma: IFACE.sigma,
     muAq: AQ.mu, iterations: 4, cohesion: 1,
+    // Film OFF. This tool calibrates the COHESION coefficient against a
+    // continuum result; the anti-coalescence film is a separate mechanism with
+    // its own parameter. Leaving it on, the settling puddle sheds fragments, each
+    // fragment takes a fresh blob id, and the film then holds them apart -- the
+    // puddle came back as 71 pieces and the "thickness" was measured across a
+    // shattered sheet. Adding a mechanism quietly changed what the instrument
+    // measured, which is the kind of thing that only shows up if you re-run the
+    // calibration after every model change.
+    disjoin: 0,
   };
   const dt = 1 / 480;
   const steps = Math.round(seconds / dt);
@@ -123,14 +147,16 @@ function thickness(wax) {
 
 console.log(`n = ${n}   cohK = ${SOLVER.cohK}   curvK = ${SOLVER.curvK}   ` +
   `target sigma = ${(IFACE.sigma * 1e3).toFixed(2)} mN/m`);
+console.log(`puddle ${(n * SPACING3 * 1e6).toFixed(1)} mL at the shipping spacing ` +
+  `${(Math.cbrt(SPACING3) * 1e3).toFixed(2)} mm`);
 console.log('');
 console.log('  g_red    predicted e   measured e   drift  layers   sigma_eff mN/m  clamps blobs  use');
 
 const rho = WAX.rho20;
-const V = 32e-6;                        // 32 mL: wide enough to be a puddle
+const V = n * SPACING3;
 const rows = [];
 const MIN_LAYERS = 4.5;
-for (const gRed of [0.05, 0.08, 0.13, 0.21]) {
+for (const gRed of [0.03, 0.05, 0.08]) {
   const ac = Math.sqrt(IFACE.sigma / (rho * gRed));
   let r;
   try { r = puddle(V, gRed); } catch (e) { console.log(`  ${gRed}  skipped: ${e.message}`); continue; }

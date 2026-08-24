@@ -228,11 +228,45 @@ and including those points bends the fitted exponent toward zero and inflates σ
 And it will not report a single-gravity answer: `e ~ (Δρ g)^(-1/2)` is the
 signature of capillarity specifically, so the exponent is fitted and checked.
 
-Measured at `cohK = 16.1`: exponent **−0.415** against the required −0.500, σ_eff
-spread 16% across resolved gravities. Two residuals are known and not hidden —
-the measured thickness runs ~10% high because where an SPH free surface *lies* is
-ambiguous to about half a particle radius, and the fitted exponent is short of
-−0.5 because the thinner puddles approach that same floor.
+Measured at `cohK = 16.1`, with `σ = 3.0 mN/m` and a **2.15 mm** particle
+spacing: exponent **−0.415** against the required −0.500, σ_eff spread 16% across
+resolved gravities, mean matching the target. Two residuals were known and
+recorded — the measured thickness runs ~10% high because where an SPH free
+surface *lies* is ambiguous to about half a particle radius, and the fitted
+exponent is short of −0.5 because the thinner puddles approach that same floor.
+
+**And then the coefficient stopped being right, which is the more useful
+finding.** σ is now 4.5 mN/m and the lamp runs at a **3.22 mm** spacing.
+Re-running the calibration *at the spacing the lamp actually uses* reads
+
+| spacing | σ target | σ_eff measured |
+|---|---|---|
+| 2.15 mm (the original calibration) | 3.0 mN/m | 3.0 mN/m |
+| 2.15 mm | 4.5 mN/m | 3.0–3.8 mN/m |
+| **3.22 mm (as shipped)** | **4.5 mN/m** | **1.9 mN/m** |
+
+and at the shipping spacing only one of three reduced gravities is resolvable at
+all — a 28 mL puddle is under five particles deep — so the tool **refuses to
+report a fit**.
+
+The direction is exactly what the scaling predicts. The per-pair cohesion
+acceleration goes as `dx^-2`, while the Laplace-pressure argument
+(`a_net ~ 2σ/(ρ a dx)`) asks for `dx^-1`. Pairwise SPH surface tension is
+resolution dependent, and a coefficient fitted at one spacing does not carry to
+another.
+
+This is **not** retuned in place. Raising `cohK` by 2.4× raises the stiffness,
+which tightens the capillary CFL by √2.4 — 41 Hz to ~64 Hz, the frame budget from
+39% to ~60% — and changes blob detachment, invalidating every measured number in
+the handoff. It is [BACKLOG.md](../BACKLOG.md) item 1, and the honest reading of
+the lamp today is that its wax is held together by rather less tension than the
+panel says.
+
+Two lessons worth keeping. **Re-run every calibration after every model change**:
+adding the anti-coalescence film shattered the calibration puddle into 71 pieces
+and silently changed what the tool was measuring (it now runs with the film off,
+since it calibrates cohesion, not the film). And **calibrate at the configuration
+you ship**, not at whatever the test rig found convenient.
 
 An earlier version of this tool used Rayleigh's drop oscillation,
 `ω² = 8σ/(ρa³)`. It does not work here: with the wax viscosity and the aqueous
@@ -270,11 +304,29 @@ a floored value came out as a confident *resolved* about a quantity that was
 never measured. It now says so instead.
 
 **The blob count is one, not six.** At 60 mL a fully coalesced mass is a 24 mm
-sphere in a 33 mm bore. The film model (§4.4) keeps it from swallowing everything
-and it cycles cleanly, but a real lamp's five-or-six-blob population needs a
-particle count the CFL scaling puts out of reach. What you get is a large single
-blob on a **128-second cycle**, measured spectrally — a real lava lamp mode, just
-not the busiest one.
+sphere in a 33 mm bore. The film model (§4.4) keeps it from swallowing everything,
+but a real lamp's five-or-six-blob population needs a particle count the CFL
+scaling puts out of reach.
+
+**And the cycle is not a reliable number.** Three warm-start runs of the identical
+configuration:
+
+| run | lamp time | cycle | in transit | rise while moving |
+|---|---|---|---|---|
+| A | 9 min | **128 s** | — | — |
+| B | 9 min | *not resolved* | 4 / 36 samples | 0.40 cm/s |
+| C | 22 min | *not resolved* | 8 / 88 samples | 0.38 cm/s |
+
+The spectral gate refused twice and was right to. The lamp is in transit for
+roughly a tenth of its life and parked for the rest, and the dwell is what varies.
+
+The cause is not the instrument: **the shipping configuration sits on the lower
+edge of its own window rule.** The pool equilibrates near 47.6 °C while the rise
+threshold at the base is 47.9 °C, so whether and when it lifts is decided by a
+residual heating rate of hundredths of a kelvin per minute. That is a
+physically real state — a lamp running slightly too cool is exactly this — but it
+is a poor default, and combined with the unseeded lattice jitter it means no two
+runs agree. Both are in [BACKLOG.md](../BACKLOG.md).
 
 **Other simplifications, stated:**
 
