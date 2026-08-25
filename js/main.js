@@ -72,6 +72,8 @@ $('reset-view').addEventListener('click', () => {
 // ---------------------------------------------------------------------------
 let running = true;
 let timeScale = 1;
+const adjustableControls = [...document.querySelectorAll('.control-panel input, .control-panel select')];
+const defaultControlValues = new Map(adjustableControls.map((el) => [el, el.value]));
 
 const bind = (id, out, fmt, apply) => {
   const el = $(id);
@@ -130,6 +132,30 @@ updateKey();
 $('toggle').addEventListener('click', (e) => {
   running = !running;
   e.target.textContent = running ? 'Pause' : 'Resume';
+});
+
+$('restore-defaults').addEventListener('click', (e) => {
+  const button = e.currentTarget;
+  button.disabled = true;
+  status.textContent = 'restoring defaults…';
+
+  for (const [el, value] of defaultControlValues) {
+    el.value = value;
+    el.dispatchEvent(new Event(el instanceof HTMLSelectElement ? 'change' : 'input'));
+  }
+  running = true;
+  $('toggle').textContent = 'Pause';
+
+  // Let the status paint before rebuilding the default developed state. Wax
+  // charge and particle count are pending controls, so apply those first.
+  setTimeout(() => {
+    applyPending(true);
+    lamp.warmStart();
+    acc = 0;
+    physDt = lamp.physDt();
+    status.textContent = 'defaults restored · developed warm start';
+    button.disabled = false;
+  }, 0);
 });
 
 $('cold').addEventListener('click', () => {

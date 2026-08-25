@@ -69,7 +69,8 @@ h2 { font-size: 1.1rem; font-weight: 520; }
 .status-dot.bad { background: #ff6b5c; box-shadow: 0 0 14px #ff6b5ccc; }
 
 .quiet-button, .primary-button { border-radius: 7px; min-height: 34px; padding: 0 12px; }
-.panel-actions { align-items: center; display: flex; }
+.panel-actions { align-items: center; display: flex; gap: 8px; }
+.panel-actions .quiet-button { margin-left: 0; }
 .quiet-button {
   color: #e6dbcd;
   background: #d8b98c12;
@@ -77,6 +78,7 @@ h2 { font-size: 1.1rem; font-weight: 520; }
   margin-left: 10px;
 }
 .quiet-button:hover { background: #d8b98c22; }
+.quiet-button:disabled { cursor: wait; opacity: .55; }
 .quiet-button.wide { margin-left: 0; flex: 1; }
 .primary-button { color: #1a0f06; background: var(--accent); border: 0; font-weight: 650; }
 
