@@ -126,6 +126,7 @@ function puddle(volume, gRed, seconds = settleSeconds) {
     // measured, which is the kind of thing that only shows up if you re-run the
     // calibration after every model change.
     disjoin: 0,
+    wetting: 0,             // non-wetting analytic puddle; plate adhesion is separate
   };
   const dt = 1 / 480;
   const steps = Math.round(seconds / dt);

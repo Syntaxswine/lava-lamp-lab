@@ -16,8 +16,9 @@ three resolvable gravities, with the exponent still near −0.5.
 
 Completed in the hostile pass. The pair law now carries the missing reference
 length, and a wide 107 mL rig runs at the exact 3.22 mm shipping spacing. With
-`cohK = 10.738`, three resolved points read 2.143/2.011/2.154 mN/m against 2.100;
-mean 2.103 (+0.1%), exponent −0.500, spread 7%, zero clamps.
+`cohK = 10.738`, three resolved points read 3.044/2.798/3.036 mN/m against 3.100;
+mean 2.959 (−4.5%), exponent −0.505, spread 8%, zero clamps. The rig explicitly
+disables the separately calibrated hot-plate wetting boundary.
 
 `cohK = 16.1` was fitted when σ was 3.0 mN/m and the calibration puddle ran at a
 2.15 mm spacing. Before the correction, the lamp ran at 3.22 mm while the label
@@ -95,9 +96,11 @@ budget still met.
 Warm start now hands over a 55% connected pool/stem/bulb plus 18/15/12% round
 parcels. The feed body reaches roughly 2.7× its equivalent diameter and pinches
 into two macroscopic daughters after about 2.4 s, taking the visible population
-from four to five. The 120 s surfactant-film drainage time keeps those daughters
-separate; the focused probe records no velocity clamps and only about ten
-microscopic strays.
+from four to five. Temperature-dependent film drainage now makes continuous
+48 °C contact rupture in about 58 s versus 248 s at 40 °C. A coalescence resets
+adjacent film ages, avoiding the measured avalanche failure; a two-minute probe
+records five isolated mergers, ends with five visible bodies, and has zero
+velocity clamps.
 
 At 60 mL a fully coalesced mass is a 24 mm sphere in a 33 mm bore, and the
 capillary CFL makes brute force cost `n^1.5`. Do **not** simply raise the particle
@@ -159,5 +162,5 @@ there. Reuse `warmStart`, which builds an arbitrary steady state directly.
 - `Volume.build` clears three full arrays per frame; only touched voxels need it.
   That clear is most of the ~2.4 ms draw.
 - `blobStats` allocates a `Map` per call and runs on every HUD update.
-- Mobile: the layout collapses correctly but 1800 particles at 47 Hz will not
+- Mobile: the layout collapses correctly but 1800 particles at 59 Hz will not
   hold on a phone. Detect and drop the count, or say so.

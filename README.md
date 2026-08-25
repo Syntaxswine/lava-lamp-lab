@@ -45,7 +45,7 @@ possibly rise, and it stops the instant that stops being true. **Shake it** does
 what shaking a lava lamp does: emulsifies the wax into droplets too small to
 lift, and takes a long time to clear.
 
-## The four findings
+## The five findings
 
 **1. A lava lamp runs inside a window, not above a threshold.** Three conditions
 have to hold at once: the plate must exceed the *local* rise threshold, the cap
@@ -71,8 +71,15 @@ lamp.** Explicit interfacial tension carries a CFL condition
 cost of a second of lamp time goes as **n^1.5** — you pay for the particles and
 again for the shorter step they force. Doubling the count nearly triples the
 bill. The solver here computes its step from that condition every frame, so
-moving the tension slider from 2.1 to 8 mN/m visibly takes it from 47 Hz to
-about 92 Hz.
+moving the tension slider from 3.1 to 8 mN/m visibly takes it from 59 Hz to
+about 94 Hz.
+
+**5. The wax “skin” is an interface and a trapped film, not a rubber shell.**
+The oil/water tension falls slightly with temperature, while the thin aqueous
+film between touching blobs drains much faster when warm. The hot plate also has
+a wetting boundary energy. Together those effects make the bottom pool spread
+across the foot and make base contacts more likely to coalesce, while cooler
+blobs aloft retain their surfactant films for much longer.
 
 ## Verifying it
 
@@ -82,6 +89,7 @@ node tools/closure-sweep.mjs
 node tools/calibrate-sigma.mjs
 node tools/solver-probe.mjs
 node tools/shape-probe.mjs
+node tools/skin-probe.mjs
 node tools/lamp-probe.mjs 9 1800 25 22 warm
 node tools/regression-probe.mjs
 ```
@@ -105,14 +113,15 @@ never measured.
 Everything calibrated is labelled as calibrated in `js/params.js`, next to what
 it was calibrated against. The cohesion law now carries the missing resolution
 length, and the calibration runs in a wide 107 mL vessel at the lamp's shipping
-3.22 mm spacing. Across three resolved gravities it reads **2.143, 2.011 and
-2.154 mN/m** against the 2.100 control (mean 2.103), with a thickness exponent of
-exactly −0.500 and no clamp events. The rig and the earlier
+3.22 mm spacing. Across three resolved gravities it reads **3.044, 2.798 and
+3.036 mN/m** against the 3.100 control (mean 2.959), with a thickness exponent of
+−0.505 and no clamp events. The non-wetting calibration explicitly disables the
+separate hot-plate adhesion boundary. The rig and the earlier
 false 1.9 mN/m result are written up in PHYSICS.md §4.6.
 
 ## Known limits
 
-The default configuration **is** just resolved — roughly 9.9 mm capillary radius
+The default configuration **is** resolved — roughly 10.6 mm capillary radius
 against a 9.7 mm floor at peak buoyancy — but only because the globe, the wax charge and the interfacial
 tension were all chosen to put it there, and the readout flips to UNDER-RESOLVED
 the moment you move them. The first configuration tried, a 16.3-inch globe with
@@ -122,11 +131,13 @@ particles.
 Warm start is now a deliberately constructed developed-state initial condition:
 a connected pool/stem/upper bulb plus three smaller parcels. Their paths are not
 prescribed; the coupled solver owns every step after hand-over. In the focused
-probe the connected body grows from **2.13× to 2.73×** its equivalent diameter,
-then breaks from 990 particles into daughters of 564 and 418 particles at
-2.30 s. The population remains at five visible bodies, reaches 1.53× deformation
-again after the first ten seconds, and records **zero** velocity clamps. Cold
-start remains the honest solid-plug experiment.
+probe the connected body grows from **2.13× to 2.34×** its equivalent diameter
+and breaks into macroscopic daughters. The hot footprint sustains 88–89% of the
+plate radius before returning blobs make it reach the flared wall. At 48 °C the
+unresolved film drains in about 58 s versus 248 s at 40 °C; a two-minute run
+records five isolated coalescences, ends with five visible bodies, peaks at
+**1.80 cm/s**, remains resolved, and records **zero** velocity clamps. Cold start
+remains the honest solid-plug experiment.
 
 A four-blob asynchronous lamp need not have one globally coherent period, so the
 spectral cycle instrument can still refuse even while blobs are plainly moving.

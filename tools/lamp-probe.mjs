@@ -69,7 +69,7 @@ for (let s = 1; s <= steps; s++) {
       `plate ${d.Tplate.toFixed(1)}  top ${d.Ttop.toFixed(1)}  ` +
       `wax ${d.waxT.toFixed(1)}/${d.waxTmax.toFixed(1)}  ` +
       `molten ${(d.molten * 100).toFixed(0).padStart(3)}%  ` +
-      `blobs ${String(d.blobs).padStart(3)}  assist ${d.pinches}  ` +
+      `blobs ${String(d.blobs).padStart(3)}  merge ${d.coalescences}  assist ${d.pinches}  ` +
       `biggest ${String(d.biggest).padStart(4)}p  ` +
       `r ${(d.meanBlobRadius * 1000).toFixed(1).padStart(4)} mm  ` +
       `stretch ${d.maxStretch.toFixed(2).padStart(4)}x  ` +
@@ -87,6 +87,7 @@ console.log(`blobs                 ${d.blobs}   largest ${d.biggest} particles `
 console.log(`mean blob radius      ${(d.meanBlobRadius * 1000).toFixed(1)} mm`);
 console.log(`maximum stretch       ${d.maxStretch.toFixed(2)}x vertical/equivalent diameter`);
 console.log(`subgrid pinch assists ${d.pinches}`);
+console.log(`film coalescences     ${d.coalescences}`);
 // A blob spends most of a cycle parked at one end. Taking the median over the
 // whole run therefore measures how long it sits still, not how fast it travels;
 // the comparable number is the median while it is actually in transit.

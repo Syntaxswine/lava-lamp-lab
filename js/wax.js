@@ -63,6 +63,8 @@ export class Wax {
     this.pairT = new Map();               // "a:b" -> seconds in contact
     this.merged = new Set();              // pairs whose film has drained
     this.contact = new Map();             // pairs touching this step
+    this.contactT = new Map();            // pair -> summed contact temperature
+    this.coalescences = 0;
     this.neckT = new Map();               // id -> persistent unresolved neck
     this.pinches = 0;
     this.lastDt = 1 / 30;
@@ -177,8 +179,11 @@ export class Wax {
     // inverse square root of that stiffness; omitting it made the corrected
     // shipping solver hit tens of thousands of velocity clamps per minute.
     const transfer = Math.max(1, this.dx / SOLVER.cohRefDx);
+    // The coldest fully molten interface is slightly stiffer than the slider's
+    // 45 C reference. Size the step for that worst mobile surface, not the mean.
+    const stiffSigma = sigma * this.surfaceScale(WAX.Tmelt + WAX.dTmelt);
     return 0.18 * Math.sqrt(this.rho0 * this.h ** 3 /
-      (2 * Math.PI * Math.max(sigma, 1e-5) * transfer));
+      (2 * Math.PI * Math.max(stiffSigma, 1e-5) * transfer));
   }
 
   radiusAt(y) {
@@ -237,8 +242,9 @@ export class Wax {
     this.clamps = 0;
     this.id.fill(1);
     this.nextId = 2;
-    this.pairT.clear(); this.merged.clear(); this.contact.clear();
+    this.pairT.clear(); this.merged.clear(); this.contact.clear(); this.contactT.clear();
     this.neckT.clear(); this.pinches = 0;
+    this.coalescences = 0;
     this.buildGrid();
     this.buildNeighbours();
     this.findBlobs();
@@ -289,9 +295,9 @@ export class Wax {
     // continuum pinch without the resolution-aware rule in findNeckCuts().
     {
       const a = Math.cbrt(3 * feedN * this.Vp / (4 * Math.PI));
-      const c0 = Math.max(0.075 * GEO.H, 0.70 * a + this.rp);
+      const c0 = Math.max(0.047 * GEO.H, 0.38 * a + this.rp);
       const c1 = 0.34 * GEO.H;
-      const poolRx = 0.98 * a, poolRy = 0.70 * a;
+      const poolRx = 1.65 * a, poolRy = 0.38 * a;
       const bulbRx = 0.72 * a, bulbRy = 1.05 * a;
       const pts = [];
       let grow = 1.0;
@@ -308,6 +314,8 @@ export class Wax {
             for (let ix = -kx; ix <= kx; ix++) {
               const xx = ix * this.dx, zz = iz * this.dx;
               const rr = xx * xx + zz * zz;
+              const wallR = this.radiusAt(yy) - 1.15 * this.rp;
+              if (rr > wallR * wallR) continue;
               const qp = rr / (poolRx * poolRx) + (yy - c0) ** 2 / (poolRy * poolRy);
               const qb = rr / (bulbRx * bulbRx) + (yy - c1) ** 2 / (bulbRy * bulbRy);
               let qs = Infinity;
@@ -374,8 +382,9 @@ export class Wax {
       this.px[i] = this.x[i]; this.py[i] = this.y[i]; this.pz[i] = this.z[i];
     }
     this.nextId = 5;
-    this.pairT.clear(); this.merged.clear(); this.contact.clear();
+    this.pairT.clear(); this.merged.clear(); this.contact.clear(); this.contactT.clear();
     this.neckT.clear(); this.pinches = 0;
+    this.coalescences = 0;
     this.clamps = 0;
     this.buildGrid();
     this.buildNeighbours();
@@ -553,7 +562,8 @@ export class Wax {
     // drainage clock had any say in it.
     const idA = this.id;
     const contact = this.contact;
-    contact.clear();
+    const contactT = this.contactT;
+    contact.clear(); contactT.clear();
     for (let i = 0; i < n; i++) {
       const base = i * MAXN, cnt = nbrCount[i];
       const xi = px[i], yi = py[i], zi = pz[i], idi = idA[i];
@@ -568,6 +578,7 @@ export class Wax {
         if (idi !== idj) {
           const key = idi < idj ? idi + ':' + idj : idj + ':' + idi;
           contact.set(key, (contact.get(key) || 0) + 1);
+          contactT.set(key, (contactT.get(key) || 0) + 0.5 * (this.T[i] + this.T[j]));
           if (!this.merged.has(key)) continue;
         }
         let ra = i; while (p[ra] !== ra) { p[ra] = p[p[ra]]; ra = p[ra]; }
@@ -647,9 +658,25 @@ export class Wax {
     for (const [key, touching] of this.contact) {
       if (touching < 3) continue;                  // a grazing particle is not contact
       live.add(key);
-      const t = (this.pairT.get(key) || 0) + this.lastDt;
+      const Tc = (this.contactT.get(key) || touching * IFACE.filmRefT) / touching;
+      const t = (this.pairT.get(key) || 0) + this.lastDt * this.filmDrainRate(Tc);
       this.pairT.set(key, t);
-      if (t >= SOLVER.drainTime) this.merged.add(key);
+      if (t >= SOLVER.drainTime && !this.merged.has(key)) {
+        this.merged.add(key);
+        this.coalescences++;
+        // Coalescence violently redistributes the new interface and its
+        // surfactant. Neighbouring films involving either parent are therefore
+        // new films, not pre-aged clocks waiting to rupture in an avalanche.
+        const [a, b] = key.split(':');
+        for (const other of [...this.pairT.keys()]) {
+          if (other === key) continue;
+          const [c, d] = other.split(':');
+          if (c === a || c === b || d === a || d === b) {
+            this.pairT.delete(other);
+            this.merged.delete(other);
+          }
+        }
+      }
     }
     for (const key of [...this.pairT.keys()]) {
       if (!live.has(key)) { this.pairT.delete(key); this.merged.delete(key); }
@@ -681,6 +708,22 @@ export class Wax {
       e.aspect = Math.max(e.x1 - e.x0, e.y1 - e.y0, e.z1 - e.z0) / d;
     }
     return out.sort((a, b) => b.count - a.count).slice(0, limit);
+  }
+
+  // Interfacial tension is calibrated at sigmaRefT. Alkane/water tension falls
+  // only slightly with temperature; keep the measured slope bounded because a
+  // surfactant blend can never justify a negative or arbitrarily stiff skin.
+  surfaceScale(T) {
+    const s = 1 - IFACE.sigmaTempCoeff * (T - IFACE.sigmaRefT);
+    return Math.max(0.75, Math.min(1.25, s));
+  }
+
+  // The thin aqueous film is below particle resolution. Elevated-temperature
+  // emulsion experiments show a much stronger change in rupture frequency than
+  // in sigma itself, mainly through viscosity and thermal capillary waves.
+  filmDrainRate(T) {
+    const r = Math.exp((T - IFACE.filmRefT) / IFACE.filmTempScale);
+    return Math.max(IFACE.filmRateMin, Math.min(IFACE.filmRateMax, r));
   }
 
   // -------------------------------------------------------------------------
@@ -719,6 +762,7 @@ export class Wax {
     // radius it lands at 0.20 per second against Lamb's 0.22. Same formula, and
     // the only difference is which length you put in it.
     const kSnum = 4.5 * muAq;
+    const wetting = env.wetting ?? 1;
     const rg = env.reducedG;
     for (let i = 0; i < n; i++) {
       const Tf = column.at(y[i]);
@@ -741,6 +785,22 @@ export class Wax {
       vx[i] += dt * (-kD * sp * bvx - kS * (vx[i] - this.blobVx[i])) * mob;
       vy[i] += dt * (ay - kD * sp * bvy - kS * (vy[i] - this.blobVy[i])) * mob;
       vz[i] += dt * (-kD * sp * bvz - kS * (vz[i] - this.blobVz[i])) * mob;
+
+      // Hot-plate wetting. Attraction normal to the substrate lowers the
+      // solid/wax interfacial energy; incompressibility turns that normal pull
+      // into lateral spreading. There is no radial target here, so the pool's
+      // footprint still comes from the vessel profile and its own volume.
+      const range = IFACE.plateWetRangeH * h;
+      const wallD = y[i] - this.rp;
+      if (wetting > 0 && wallD < range && T[i] > IFACE.plateWetT0) {
+        let hot = (T[i] - IFACE.plateWetT0) / (IFACE.plateWetT1 - IFACE.plateWetT0);
+        if (hot > 1) hot = 1;
+        hot = hot * hot * (3 - 2 * hot);
+        const q = Math.max(0, 1 - wallD / range);
+        const aWet = wetting * IFACE.plateWetK * sigma * this.surfaceScale(T[i]) /
+          (rw * h2) * q * q * hot;
+        vy[i] -= dt * aWet * mob;
+      }
     }
 
     // ---- 2. predict -----------------------------------------------------
@@ -863,17 +923,22 @@ export class Wax {
         const a3 = hr * hr * hr * r2 * r;
         const C = 2 * r > h ? kCoh * a3 : kCoh * (2 * a3 - h6_64);
         const Kij = 2 * rho0 / (ri + rho[j]);
+        const Tij = 0.5 * (T[i] + T[j]);
+        const skin = this.surfaceScale(Tij);
         // Same spline, opposite sign, across a film that has not drained: the
         // surfactant layer holds the two interfaces apart instead of letting
         // them pull together.
         if (idArr[i] !== idArr[j]) {
-          const w = disjoinA * m * Math.abs(C) / r;
+          // Warm films drain and rupture faster, so their stabilising pressure
+          // is weaker even before the drainage clock completes.
+          const film = skin / Math.sqrt(this.filmDrainRate(Tij));
+          const w = disjoinA * film * m * Math.abs(C) / r;
           fx += Kij * w * ddx; fy += Kij * w * ddy; fz += Kij * w * ddz;
         } else {
           const w = -cohA * m * C / r;
-          fx += Kij * (w * ddx - curvA * (nxA[i] - nxA[j]));
-          fy += Kij * (w * ddy - curvA * (nyA[i] - nyA[j]));
-          fz += Kij * (w * ddz - curvA * (nzA[i] - nzA[j]));
+          fx += Kij * skin * (w * ddx - curvA * (nxA[i] - nxA[j]));
+          fy += Kij * skin * (w * ddy - curvA * (nyA[i] - nyA[j]));
+          fz += Kij * skin * (w * ddz - curvA * (nzA[i] - nzA[j]));
         }
       }
       const mob = (1 - 0.9 * solid[i]) * dt;
@@ -1075,7 +1140,7 @@ export class Wax {
       if (id === undefined) { id = this.nextId++; cells.set(key, id); }
       this.id[i] = id;
     }
-    this.pairT.clear(); this.merged.clear(); this.contact.clear();
+    this.pairT.clear(); this.merged.clear(); this.contact.clear(); this.contactT.clear();
     this.stirTimer = 4;
   }
 

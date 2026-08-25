@@ -175,6 +175,47 @@ splits leaves the larger half holding the id and names the smaller half afresh,
 which is how a pinch-off produces a blob whose film has not yet drained against
 its parent.
 
+That film is the temperature-sensitive “skin” visible in a real lamp. Elevated-
+temperature oil-in-water experiments report much more frequent coalescence as
+the aqueous-film viscosity falls and thermal capillary fluctuations rupture the
+film; alkane/water tension itself falls only slightly. Surfactant gradients also
+generate Marangoni stresses that oppose drainage. See the primary experiments on
+[heated emulsion coalescence](https://www.nature.com/articles/s41598-021-89919-5)
+and [surfactant stresses in thin films](https://www.nature.com/articles/s42005-025-02410-9).
+
+The resolved surface therefore uses a small linear thermal correction about its
+calibration temperature,
+
+```
+σ(T) = σ45 [1 − 0.006 (T − 45 °C)]
+```
+
+while the unresolved film drainage clock receives the stronger measured-sign
+closure
+
+```
+r_film(T) = clamp( exp[(T − 44 °C) / 5.5 K], 0.25, 6 ) .
+```
+
+At 48 °C a continuously touching film reaches the 120 s rupture exposure in
+about 58 s; at 40 °C it takes about 248 s. Its disjoining barrier scales as
+`σ(T)/√r_film`, so a warm contact is also easier to maintain before rupture.
+When one film ruptures, other clocks involving either parent reset: the violent
+coalescence flow and newly redistributed surfactant make them new films rather
+than an array of pre-aged clocks that all fail in an avalanche.
+
+The hot plate is a separate three-phase boundary. A normal adhesion acceleration
+
+```
+a_wet = 3 σ(T)/(ρh²) · q² · smoothstep(38 °C, 47 °C, T)
+```
+
+acts through the bottom three smoothing lengths. Incompressibility converts that
+normal attraction into lateral spreading; there is no prescribed radial target.
+This is the particle-scale counterpart of a bridge growing radially after the
+intervening film ruptures in substrate-wetting experiments
+([Nature Communications](https://www.nature.com/articles/s41467-021-26015-2)).
+
 The connected-component bond uses 1.95 particle spacings, essentially the full
 compact-support neighbourhood. The old 1.75-spacing cutoff declared a drawn
 surface disconnected while its particles were still exchanging pressure and
@@ -200,8 +241,10 @@ dt ≤ 0.25 √( ρ h³ / (2π σ) )
 The simulator computes this every frame from the smoothing length and whatever
 the tension slider currently says. It uses a 0.18 safety factor, plus the
 inverse-square-root of the cohesion resolution-transfer factor, rather than
-riding the theoretical 0.25 limit. Move the tension from 2.1 to 8 mN/m and the
-shipping solver goes from 47 Hz to about 92 Hz by itself.
+riding the theoretical 0.25 limit. The coldest fully molten interface is about
+5% stiffer than the 45 °C slider reference, and the step includes that worst
+mobile surface. Move the tension from 3.1 to 8 mN/m and the shipping solver goes
+from 59 Hz to about 94 Hz by itself.
 
 Running past it does not look like divergence. It looks like a velocity clamp
 firing on two-thirds of the particles every step while the lamp merely seems
@@ -263,17 +306,19 @@ a 60 mm-radius cylindrical vessel: a 107 mL puddle at the exact shipping spacing
 The film identity state machine is bypassed, the puddle starts 35% above the
 analytic height, and only points deeper than 4.5 particle layers enter the fit.
 
-At `cohK = 10.738`, target σ = 2.10 mN/m. The sweep gravity scales with the
+At `cohK = 10.738`, target σ = 3.10 mN/m. The sweep gravity scales with the
 requested tension so all target puddles retain the same resolvable thickness:
 
 | reduced gravity | thickness | σ_eff |
 |---|---:|---:|
-| 0.014 m/s² | 24.61 mm | 2.143 mN/m |
-| 0.023 m/s² | 18.46 mm | 2.011 mN/m |
-| 0.035 m/s² | 15.61 mm | 2.154 mN/m |
+| 0.021 m/s² | 24.14 mm | 3.044 mN/m |
+| 0.034 m/s² | 17.93 mm | 2.798 mN/m |
+| 0.052 m/s² | 15.25 mm | 3.036 mN/m |
 
-The mean is **2.103 mN/m** (+0.1%), the thickness exponent is **−0.500**, the
-spread is 7%, and all three runs record zero clamps.
+The mean is **2.959 mN/m** (−4.5%), the thickness exponent is **−0.505**, the
+spread is 8%, and all three runs record zero clamps. The calibration is explicitly
+non-wetting; enabling the hot-plate boundary in this rig flattens the puddle and
+would measure substrate adhesion rather than cohesion.
 
 Two lessons worth keeping. **Re-run every calibration after every model change**:
 adding the anti-coalescence film shattered the calibration puddle into 71 pieces
@@ -294,12 +339,12 @@ of magnitude depending on which crossings you kept.
 that.** The capillary length `a_c = √(σ/Δρ g)` is the radius at which buoyancy
 tears a blob off the pool, and SPH needs about three particle spacings across a
 radius before it can hold a free surface at that scale. The default sits inside
-that bound: `a_c ≈ 9.9 mm` against a `3·dx = 9.7 mm` floor, from a **measured**
-Δρ near 2.2 kg/m³ at peak lift, and the readout says RESOLVED by a narrow margin.
+that bound: `a_c ≈ 10.6 mm` against a `3·dx = 9.7 mm` floor, from a **measured**
+Δρ near 2.8 kg/m³ at peak lift, and the readout says RESOLVED.
 
 Getting there took three changes, all stated rather than hidden. The globe was
 scaled down from 16.3 to 14.5 inches; the wax charge is 60 mL, on the light side
-of a real lamp's 15–25%; and the default interfacial tension is 2.1 mN/m inside
+of a real lamp's 15–25%; and the default interfacial tension is 3.1 mN/m inside
 the 1–5 mN/m surfactant-rich band. Each is a physically legitimate point
 in the parameter space, and each was picked because it is where the solver can
 express its own capillary length.
@@ -324,10 +369,11 @@ hand-over. Cold start still begins from the single solid plug and invents no
 developed history.
 
 The focused shape probe measures the connected feed body at 2.13× its equivalent
-spherical diameter initially and about 2.7× immediately before it divides into
-two macroscopic daughters. Five visible bodies remain after the split, with only
-about ten microscopic strays and no velocity clamps. The 120 s film drainage
-time prevents the daughters from immediately undoing that topology change.
+spherical diameter initially and 2.34× immediately before it divides into
+macroscopic daughters. The hot footprint sustains about 89% of the foot radius
+before returning wax spreads to the flared wall. A two-minute probe records five
+isolated film coalescences while continuing pinch-off leaves five visible bodies;
+peak speed is 1.80 cm/s and the velocity clamp never fires.
 
 **A cycle is not necessarily one number.** Several asynchronous bodies do not have
 to put one prominent peak in the global centre-of-mass spectrum. The detector
@@ -362,14 +408,15 @@ committed bitwise fingerprint, so a refusal is reproducible rather than luck.
 | aqueous density at 20 °C | 1000 kg/m³ | water + glycol + salt |
 | aqueous expansion β | 3.8e-4 /K | water 2.1e-4 at 20 °C, 4.6e-4 at 50 °C; glycol ~6e-4 |
 | aqueous viscosity | 10 mPa·s | glycol-thickened |
-| interfacial tension | 2.1 mN/m | oil/water with surfactant, 1–5 mN/m, §5 |
+| interfacial tension at 45 °C | 3.1 mN/m | oil/water with surfactant, 1–5 mN/m, §4.4–§5 |
+| thermal tension slope | −0.6%/K | small compared with the film-viscosity effect, §4.4 |
 | bulb | 25 W | the stock bulb for a globe this size |
 | coupled fraction | 0.65 | **calibrated** to the measured steady state |
 | glass–room coefficient | 19 W/m²/K | **calibrated**; lumps convection, radiation, the metal cap |
 | convection closure C | 1.8 | **calibrated**, `tools/closure-sweep.mjs`; refitted per geometry |
 | cohesion coefficient | 10.738 | **calibrated**, `tools/calibrate-sigma.mjs` |
 | particles | 1800 | the most the capillary CFL affords in real time, §4.5 |
-| solver step | 1/47 s | **derived**, with a conservative capillary-CFL safety factor, §4.5 |
+| solver step | 1/59 s | **derived**, including the colder molten-surface stiffness, §4.5 |
 
 ## 7. The instruments
 
@@ -380,6 +427,7 @@ committed bitwise fingerprint, so a refusal is reproducible rather than luck.
 | `calibrate-sigma.mjs` | σ from puddle thickness, and the exponent | report from under-resolved puddles, or from one gravity |
 | `solver-probe.mjs` | the density projection, step by step from a cold plug | — |
 | `shape-probe.mjs` | peak elongation, neck scale and macroscopic split events | — |
+| `skin-probe.mjs` | hot-footprint radius, σ(T), film barrier and drainage time | accept a narrow hot pool or temperature-independent film |
 | `lamp-probe.mjs` | the whole lamp: window, blobs, rise speed, cycle | name a cycle period whose spectral peak is not prominent |
 | `regression-probe.mjs` | fixed-seed state and configuration fingerprint | accept a changed physical state without baseline review |
 

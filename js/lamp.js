@@ -291,6 +291,7 @@ export class Lamp {
       meanBlobRadius: mean,
       maxStretch: big.reduce((a, b) => Math.max(a, b.verticalStretch || 0), 0),
       pinches: w.pinches,
+      coalescences: w.coalescences,
       maxRise: w.maxRise,
       riseSpeed: w.typicalRise(),
       resolution: this.resolution(),

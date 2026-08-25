@@ -35,6 +35,11 @@ function fingerprint(lamp) {
     pinchRadiusDx: SOLVER.pinchRadiusDx,
     pinchDelay: SOLVER.pinchDelay,
     sigma: IFACE.sigma,
+    sigmaTempCoeff: IFACE.sigmaTempCoeff,
+    filmRefT: IFACE.filmRefT,
+    filmTempScale: IFACE.filmTempScale,
+    plateWetK: IFACE.plateWetK,
+    plateWetRangeH: IFACE.plateWetRangeH,
     dt: lamp.physDt(),
   }));
   return fnv(config, h).toString(16).padStart(8, '0');

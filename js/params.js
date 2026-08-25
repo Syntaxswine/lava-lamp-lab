@@ -82,12 +82,29 @@ export const AQ = {
 };
 
 export const IFACE = {
-  // Oil/water with surfactant spans about 1-5 mN/m. 2.1 mN/m is deliberately
+  // Oil/water with surfactant spans about 1-5 mN/m. 3.1 mN/m is deliberately
   // in the middle of that range: the previous 4.5 mN/m default was numerically
   // comfortable but rounded every parcel into a marble before it could draw a
   // visible neck. The resolution readout still calls out settings whose
   // capillary length drops below three particle spacings.
-  sigma: 2.1e-3,            // N/m
+  sigma: 3.1e-3,            // N/m
+  sigmaRefT: 45,            // degC — calibration and slider value live here
+  sigmaTempCoeff: 0.006,    // 1/K — alkane/water sigma falls slightly when hot
+  // A blob approaching another blob or the plate first traps a thin aqueous
+  // film. Heating lowers the film viscosity and raises the rupture frequency;
+  // represent that unresolved lubrication layer with an Arrhenius-like rate
+  // multiplier about a running-lamp reference temperature.
+  filmRefT: 44,             // degC
+  filmTempScale: 5.5,       // K per e-fold change in drainage/rupture rate
+  filmRateMin: 0.25,
+  filmRateMax: 6.0,
+  // Adhesion to the hot plate supplies a wetting energy. Pulling the bottom
+  // layers toward the substrate lets incompressibility spread them sideways,
+  // rather than prescribing a radial target or drawing a fake pool shape.
+  plateWetK: 3.0,           // multiplier on sigma/(rho h^2), fitted to footprint
+  plateWetRangeH: 3.0,      // attraction range in smoothing lengths
+  plateWetT0: 38,           // degC — onset after the wax is fully liquid
+  plateWetT1: 47,           // degC — full hot-plate adhesion
 };
 
 // ---------------------------------------------------------------------------
@@ -154,7 +171,7 @@ export const SOLVER = {
   // effective surface tension whenever resolution changes.
   cohRefDx: 2.15e-3,        // m — spacing of the original puddle calibration
   cohK: 10.738,             // calibrated at the shipping 3.22 mm spacing:
-                            // sigma_eff 2.103 vs 2.100 mN/m, exponent -0.500
+                            // sigma_eff 2.959 vs 3.100 mN/m, exponent -0.505
   curvK: 0.55,              // Akinci curvature-minimisation weight
   xsph: 0.0,                // extra XSPH smoothing per SECOND (0 = physical mu only)
   Cd: 1.0,                  // drag coefficient of a wobbling drop (Clift et al.)
