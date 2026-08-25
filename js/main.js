@@ -1,7 +1,7 @@
 // main.js — wire the lamp to the screen.
 //
-// The solver runs on a FIXED 30 Hz step off an accumulator, not on whatever the
-// frame time happened to be. Two reasons. A position-based fluid changes its own
+// The solver runs on a capillary-CFL step off an accumulator, not on whatever
+// the frame time happened to be. Two reasons. A position-based fluid changes its own
 // stiffness with dt, so a variable step makes the wax subtly firmer on fast
 // frames; and a lava lamp moves at a centimetre a second, so thirty solver steps
 // a second is far more than the motion needs while sixty would spend half the
@@ -14,7 +14,7 @@
 
 import { Lamp } from './lamp.js';
 import { Renderer, PALETTES } from './render.js';
-import { WAX, AQ, IFACE, SOLVER, HEAT } from './params.js';
+import { WAX, AQ, IFACE, SOLVER } from './params.js';
 
 const $ = (id) => document.getElementById(id);
 const canvas = $('lamp-canvas');
@@ -38,7 +38,7 @@ try {
 const lamp = new Lamp({ particles: SOLVER.particles });
 lamp.env.iterations = SOLVER.iterations;
 lamp.warmStart();
-status.textContent = 'WebGL2 · warm start';
+status.textContent = 'WebGL2 · developed warm start';
 
 // ---------------------------------------------------------------------------
 // camera
@@ -143,7 +143,7 @@ $('warm').addEventListener('click', () => {
   status.textContent = 'building steady state…';
   setTimeout(() => {
     lamp.warmStart();
-    status.textContent = 'warm start · steady state';
+    status.textContent = 'warm start · developed circulation';
   }, 0);
 });
 $('ff').addEventListener('click', () => {
@@ -228,7 +228,7 @@ function frame(now) {
     const d = lamp.diagnostics();
     $('hud-clock').textContent = fmtClock(d.lampTime);
     $('hud-blobs').textContent = d.blobs;
-    $('hud-rise').textContent = (d.maxRise * 100).toFixed(1);
+    $('hud-rise').textContent = (d.riseSpeed * 100).toFixed(1);
     $('hud-fps').textContent = fps.toFixed(0);
     const win = $('hud-window');
     win.textContent = d.molten < 0.02 ? 'wax still solid' : d.window;
@@ -242,10 +242,9 @@ function frame(now) {
     $('r-sink').textContent = `${d.sinkAtTop.toFixed(1)} °C`;
     $('r-blob').textContent = d.meanBlobRadius > 0
       ? `${(d.meanBlobRadius * 1000).toFixed(1)} mm` : '—';
-    const ac = Math.sqrt(lamp.env.sigma / (Math.max(0.3, lamp.env.dRho) * HEAT.g));
-    $('r-cap').textContent = `${(ac * 1000).toFixed(1)} mm`;
-    $('r-molten').textContent = `${(d.molten * 100).toFixed(0)}%`;
     const res = d.resolution;
+    $('r-cap').textContent = res.known ? `${(res.capillary * 1000).toFixed(1)} mm` : '—';
+    $('r-molten').textContent = `${(d.molten * 100).toFixed(0)}%`;
     $('r-res').textContent = !res.known
       ? `blob scale not measurable yet — nothing in the tank is buoyant`
       : res.resolved

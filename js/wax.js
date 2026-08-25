@@ -63,6 +63,8 @@ export class Wax {
     this.pairT = new Map();               // "a:b" -> seconds in contact
     this.merged = new Set();              // pairs whose film has drained
     this.contact = new Map();             // pairs touching this step
+    this.neckT = new Map();               // id -> persistent unresolved neck
+    this.pinches = 0;
     this.lastDt = 1 / 30;
     this.dpx = f(); this.dpy = f(); this.dpz = f();
     this.dT = f();
@@ -106,7 +108,10 @@ export class Wax {
     // the particle count or sigma does not change the physics:
     //   cohesion   a = cohA * m * C(r),   [cohA] = L^4 / (M T^2)
     //   curvature  a = curvA * dn,        [curvA] = L / T^2
-    this.cohScale = 1 / (this.rho0 * this.rho0 * this.dx * this.dx);
+    // Pairwise cohesion otherwise scales as dx^-2, one power steeper than the
+    // Laplace-pressure balance it approximates.  Anchor that missing length to
+    // the calibration spacing so a fixed sigma stays fixed across resolutions.
+    this.cohScale = 1 / (this.rho0 * this.rho0 * this.dx * SOLVER.cohRefDx);
     // The curvature term is tied to the cohesion term through the cohesion
     // spline's own characteristic magnitude, C(0) = kCoh*h^6/64. Akinci et al.
     // use one gamma for both, but their two expressions do not carry the same
@@ -167,7 +172,13 @@ export class Wax {
   // the real ceiling on a particle lava lamp in a browser, and it is why the
   // default sits at 1800 particles rather than as many as memory allows.
   capillaryDt(sigma = IFACE.sigma) {
-    return 0.25 * Math.sqrt(this.rho0 * this.h ** 3 / (2 * Math.PI * Math.max(sigma, 1e-5)));
+    // The resolution-transfer correction below strengthens each pair by
+    // dx/cohRefDx at coarse spacings.  The explicit stability limit follows the
+    // inverse square root of that stiffness; omitting it made the corrected
+    // shipping solver hit tens of thousands of velocity clamps per minute.
+    const transfer = Math.max(1, this.dx / SOLVER.cohRefDx);
+    return 0.18 * Math.sqrt(this.rho0 * this.h ** 3 /
+      (2 * Math.PI * Math.max(sigma, 1e-5) * transfer));
   }
 
   radiusAt(y) {
@@ -190,6 +201,7 @@ export class Wax {
   // configuration it is trying to reach.
   // -------------------------------------------------------------------------
   reset(Tamb = HEAT.Tamb, rand = Math.random) {
+    this.rand = rand;
     const dx = this.dx, n = this.n;
     let placed = 0, y = this.rp;
     const jit = 0.06 * dx;
@@ -226,6 +238,145 @@ export class Wax {
     this.id.fill(1);
     this.nextId = 2;
     this.pairT.clear(); this.merged.clear(); this.contact.clear();
+    this.neckT.clear(); this.pinches = 0;
+    this.buildGrid();
+    this.buildNeighbours();
+    this.findBlobs();
+  }
+
+  // Build a developed circulation as an initial condition: a hot pool drawing
+  // a bulb through a narrow stem, plus three smaller parcels aloft. Warm-starting
+  // the old cold-plug geometry merely changed its temperature; with a physically
+  // correct surface tension that left one 60 mL mass, so the first thing users
+  // saw was either a motionless pool or the whole charge wedged in the neck.
+  //
+  // These are initial positions and temperatures, not prescribed paths.  The
+  // normal neighbour graph, buoyancy, drag, heat transfer, film drainage and
+  // confinement own every step after this method returns.
+  seedDeveloped(column, riseThreshold, rand = Math.random) {
+    this.rand = rand;
+    const n = this.n;
+    const feedN = Math.max(16, Math.round(n * 0.55));
+    const fallN = Math.max(8, Math.round(n * 0.18));
+    const riseN = Math.max(8, Math.round(n * 0.15));
+    const smallN = n - feedN - fallN - riseN;
+    const groups = [
+      { start: feedN, count: fallN, id: 2, y: 0.70 * GEO.H, stretch: 1.02, vy: -0.0020, heat: -1.5 },
+      { start: feedN + fallN, count: riseN, id: 3, y: 0.54 * GEO.H, stretch: 1.12, vy: 0.0015, heat: 1.1 },
+      { start: feedN + fallN + riseN, count: smallN, id: 4, y: 0.82 * GEO.H, stretch: 0.96, vy: -0.0015, heat: -1.8 },
+    ];
+
+    const place = (i, xx, yy, zz, id, heat, vy) => {
+      const jit = 0.035 * this.dx;
+      this.px[i] = xx + (rand() * 2 - 1) * jit;
+      this.py[i] = yy + (rand() * 2 - 1) * jit;
+      this.pz[i] = zz + (rand() * 2 - 1) * jit;
+      this.confine(i);
+      this.x[i] = this.px[i]; this.y[i] = this.py[i]; this.z[i] = this.pz[i];
+      this.vx[i] = this.vz[i] = 0; this.vy[i] = vy;
+      const Tf = column.at(this.y[i]);
+      this.T[i] = Math.max(WAX.Tmelt + WAX.dTmelt + 0.25,
+        riseThreshold(Tf) + heat + 0.18 * (rand() * 2 - 1));
+      this.id[i] = id;
+    };
+
+    // One connected implicit surface: a broad heated pool, a narrow waist and
+    // a buoyant upper bulb. Using a union instead of overlapping two particle
+    // clouds avoids the density spike that an apparently innocent hand-built
+    // bridge would create. The neck is about 2.3 spacings in radius -- visible
+    // to the volume renderer, but below the three-spacing free-surface limit
+    // where SPH cannot finish a
+    // continuum pinch without the resolution-aware rule in findNeckCuts().
+    {
+      const a = Math.cbrt(3 * feedN * this.Vp / (4 * Math.PI));
+      const c0 = Math.max(0.075 * GEO.H, 0.70 * a + this.rp);
+      const c1 = 0.34 * GEO.H;
+      const poolRx = 0.98 * a, poolRy = 0.70 * a;
+      const bulbRx = 0.72 * a, bulbRy = 1.05 * a;
+      const pts = [];
+      let grow = 1.0;
+      while (pts.length < feedN) {
+        pts.length = 0;
+        const rx = Math.max(poolRx, bulbRx) * grow;
+        const y0 = Math.max(this.rp, c0 - poolRy * grow);
+        const y1 = Math.min(GEO.H - this.rp, c1 + bulbRy * grow);
+        const kx = Math.ceil(rx / this.dx);
+        const iy0 = Math.floor(y0 / this.dx), iy1 = Math.ceil(y1 / this.dx);
+        for (let iy = iy0; iy <= iy1; iy++) {
+          const yy = iy * this.dx;
+          for (let iz = -kx; iz <= kx; iz++) {
+            for (let ix = -kx; ix <= kx; ix++) {
+              const xx = ix * this.dx, zz = iz * this.dx;
+              const rr = xx * xx + zz * zz;
+              const qp = rr / (poolRx * poolRx) + (yy - c0) ** 2 / (poolRy * poolRy);
+              const qb = rr / (bulbRx * bulbRx) + (yy - c1) ** 2 / (bulbRy * bulbRy);
+              let qs = Infinity;
+              if (yy >= c0 && yy <= c1) {
+                const t = (yy - c0) / (c1 - c0);
+                const stemR = a * (0.55 + 0.18 * Math.abs(2 * t - 1) ** 1.4);
+                qs = rr / (stemR * stemR);
+              }
+              const q = Math.min(qp, qb, qs);
+              if (q <= grow * grow) pts.push({ x: xx, y: yy, z: zz, q });
+            }
+          }
+        }
+        grow *= 1.05;
+      }
+      pts.sort((a0, b0) => a0.q - b0.q);
+      for (let i = 0; i < feedN; i++) {
+        const p = pts[i];
+        let t = (p.y - 0.08 * GEO.H) / (0.27 * GEO.H);
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        t = t * t * (3 - 2 * t);
+        place(i, p.x, p.y, p.z, 1, -0.8 + 3.4 * t, 0.0030 * t);
+      }
+    }
+
+    for (const g of groups) {
+      if (g.count <= 0) continue;
+      const a = Math.cbrt(3 * g.count * this.Vp / (4 * Math.PI));
+      let ay = a * g.stretch;
+      let ax = a / Math.sqrt(g.stretch);
+      let cy = g.floor ? Math.max(g.y, ay + this.rp) : g.y;
+      // Keep a real annulus around the blob so the return-flow closure does not
+      // begin from an unresolved seal, especially at large wax-charge settings.
+      const wall = this.radiusAt(cy) - 2.2 * this.rp - Math.abs(g.x || 0);
+      if (ax > wall) { const s = wall / ax; ax *= s; ay /= s * s; }
+      if (g.floor) cy = Math.max(g.y, ay + this.rp);
+      const pts = [];
+      let grow = 1.08;
+      while (pts.length < g.count) {
+        pts.length = 0;
+        const rx = ax * grow, ry = ay * grow;
+        const kx = Math.ceil(rx / this.dx), ky = Math.ceil(ry / this.dx);
+        for (let iy = -ky; iy <= ky; iy++) {
+          for (let iz = -kx; iz <= kx; iz++) {
+            for (let ix = -kx; ix <= kx; ix++) {
+              const xx = ix * this.dx, yy = iy * this.dx, zz = iz * this.dx;
+              const q = (xx * xx + zz * zz) / (rx * rx) + yy * yy / (ry * ry);
+              if (q <= 1) pts.push({ x: xx, y: yy, z: zz, q });
+            }
+          }
+        }
+        grow *= 1.06;
+      }
+      pts.sort((a0, b0) => a0.q - b0.q);
+      for (let k = 0; k < g.count; k++) {
+        const i = g.start + k, p = pts[k];
+        place(i, (g.x || 0) + p.x, cy + p.y, p.z, g.id, g.heat, g.vy);
+      }
+    }
+
+    for (let i = 0; i < n; i++) {
+      this.solid[i] = 0;
+      this.rho[i] = this.rho0;
+      this.px[i] = this.x[i]; this.py[i] = this.y[i]; this.pz[i] = this.z[i];
+    }
+    this.nextId = 5;
+    this.pairT.clear(); this.merged.clear(); this.contact.clear();
+    this.neckT.clear(); this.pinches = 0;
+    this.clamps = 0;
     this.buildGrid();
     this.buildNeighbours();
     this.findBlobs();
@@ -312,6 +463,72 @@ export class Wax {
   // Blobs: connected components of the neighbour graph, then per-blob volume,
   // equivalent radius, mean velocity, and surface-exposure normalisation.
   // -------------------------------------------------------------------------
+  findNeckCuts() {
+    const n = this.n, id = this.id, py = this.py;
+    const groups = new Map();
+    for (let i = 0; i < n; i++) {
+      const k = id[i];
+      let g = groups.get(k);
+      if (!g) groups.set(k, g = { count: 0, y0: Infinity, y1: -Infinity });
+      g.count++;
+      if (py[i] < g.y0) g.y0 = py[i];
+      if (py[i] > g.y1) g.y1 = py[i];
+    }
+
+    const cuts = new Map();
+    const live = new Set();
+    const BINS = 16;
+    for (const [k, g] of groups) {
+      if (g.count < 80) continue;
+      const a = Math.cbrt(3 * g.count * this.Vp / (4 * Math.PI));
+      const span = g.y1 - g.y0 + 2 * this.rp;
+      if (span / (2 * a) < SOLVER.pinchStretch) continue;
+
+      const bins = new Int32Array(BINS);
+      const rawSpan = Math.max(g.y1 - g.y0, this.dx);
+      for (let i = 0; i < n; i++) if (id[i] === k) {
+        let b = Math.floor(BINS * (py[i] - g.y0) / rawSpan);
+        if (b < 0) b = 0; else if (b >= BINS) b = BINS - 1;
+        bins[b]++;
+      }
+
+      let best = null;
+      for (let b = 2; b <= BINS - 3; b++) {
+        if (bins[b] === 0) continue; // already disconnected geometrically
+        let leftPeak = 0, rightPeak = 0, leftN = 0, rightN = 0;
+        for (let q = 0; q < b; q++) { leftPeak = Math.max(leftPeak, bins[q]); leftN += bins[q]; }
+        for (let q = b + 1; q < BINS; q++) { rightPeak = Math.max(rightPeak, bins[q]); rightN += bins[q]; }
+        const shoulder = Math.min(leftPeak, rightPeak);
+        if (leftN < 24 || rightN < 24 || shoulder < 4) continue;
+        const ratio = bins[b] / shoulder;
+        const slab = rawSpan / BINS;
+        const radius = Math.sqrt(bins[b] * this.Vp / (Math.PI * slab));
+        if (ratio > SOLVER.pinchRatio || radius > SOLVER.pinchRadiusDx * this.dx) continue;
+        const score = ratio + 0.15 * radius / this.dx;
+        if (!best || score < best.score) {
+          best = { score, y: g.y0 + (b + 0.5) * slab, slab };
+        }
+      }
+      if (!best) continue;
+
+      live.add(k);
+      const prev = this.neckT.get(k);
+      // Follow a material neck as the upper lobe pulls it upward. Comparing to
+      // one fixed bin would reset the clock merely because the waist crossed a
+      // bin boundary; four bins still cannot jump from one physical waist to a
+      // different lobe in a single step.
+      const stayed = prev && Math.abs(prev.y - best.y) < 4.5 * best.slab;
+      const elapsed = (stayed ? prev.elapsed : 0) + this.lastDt;
+      this.neckT.set(k, { elapsed, y: best.y });
+      if (elapsed >= SOLVER.pinchDelay) {
+        cuts.set(k, best.y);
+        if (!prev || prev.elapsed < SOLVER.pinchDelay) this.pinches++;
+      }
+    }
+    for (const k of [...this.neckT.keys()]) if (!live.has(k)) this.neckT.delete(k);
+    return cuts;
+  }
+
   findBlobs() {
     const n = this.n, p = this.blob;
     const px = this.px, py = this.py, pz = this.pz;
@@ -322,7 +539,13 @@ export class Wax {
     // because surface particles sit a little further apart than the interior --
     // and every one of those phantom singletons then got particle-scale drag and
     // particle-scale heat transfer instead of its blob's.
-    const bond2 = (1.75 * this.dx) ** 2;
+    // Use essentially the whole compact-support neighbourhood. A 1.75 dx cut
+    // called the sparse surface of a drawn stem disconnected while its particles
+    // were still exchanging pressure and capillary force. Different persistent
+    // identities still cannot bond until their film drains, so this does not
+    // make touching daughter drops coalesce.
+    const bond2 = (1.95 * this.dx) ** 2;
+    const neckCuts = this.findNeckCuts();
     // Two particles are bonded when they are touching AND they belong to the
     // same blob, or to two blobs whose film has already drained. Touching alone
     // is not enough: a surfactant film keeps distinct blobs distinct, and if the
@@ -340,6 +563,8 @@ export class Wax {
         const dx = xi - px[j], dy = yi - py[j], dz = zi - pz[j];
         if (dx * dx + dy * dy + dz * dz > bond2) continue;
         const idj = idA[j];
+        const cutY = idi === idj ? neckCuts.get(idi) : undefined;
+        if (cutY !== undefined && ((yi < cutY) !== (py[j] < cutY))) continue;
         if (idi !== idj) {
           const key = idi < idj ? idi + ':' + idj : idj + ':' + idi;
           contact.set(key, (contact.get(key) || 0) + 1);
@@ -437,11 +662,24 @@ export class Wax {
     for (let i = 0; i < this.n; i++) {
       const r = this.blob[i];
       let e = seen.get(r);
-      if (!e) seen.set(r, e = { count: 0, radius: this.blobA[i], vy: this.blobVy[i], T: 0 });
+      if (!e) seen.set(r, e = {
+        count: 0, radius: this.blobA[i], vy: this.blobVy[i], T: 0,
+        x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity,
+        z0: Infinity, z1: -Infinity,
+      });
       e.count++; e.T += this.T[i];
+      const x = this.x[i], y = this.y[i], z = this.z[i];
+      if (x < e.x0) e.x0 = x; if (x > e.x1) e.x1 = x;
+      if (y < e.y0) e.y0 = y; if (y > e.y1) e.y1 = y;
+      if (z < e.z0) e.z0 = z; if (z > e.z1) e.z1 = z;
     }
     const out = [...seen.values()];
-    for (const e of out) e.T /= e.count;
+    for (const e of out) {
+      e.T /= e.count;
+      const d = Math.max(2 * e.radius, this.dx);
+      e.verticalStretch = (e.y1 - e.y0 + 2 * this.rp) / d;
+      e.aspect = Math.max(e.x1 - e.x0, e.y1 - e.y0, e.z1 - e.z0) / d;
+    }
     return out.sort((a, b) => b.count - a.count).slice(0, limit);
   }
 
@@ -818,12 +1056,26 @@ export class Wax {
   // Shaking a lava lamp emulsifies it: the blobs shatter into droplets too
   // small to rise, and it takes a long time for them to find each other again.
   shake(strength = 0.05) {
+    const rand = this.rand || Math.random;
     for (let i = 0; i < this.n; i++) {
       if (this.solid[i] > 0.5) continue;
-      this.vx[i] += (Math.random() * 2 - 1) * strength;
-      this.vy[i] += (Math.random() * 2 - 1) * strength;
-      this.vz[i] += (Math.random() * 2 - 1) * strength;
+      this.vx[i] += (rand() * 2 - 1) * strength;
+      this.vy[i] += (rand() * 2 - 1) * strength;
+      this.vz[i] += (rand() * 2 - 1) * strength;
     }
+    // A shake creates newly coated droplets; they must not inherit the parent
+    // blob's already-drained film.  Assign fresh identities by small spatial
+    // cells so the result is droplets rather than 1,800 mutually repelling
+    // single particles.
+    const cells = new Map();
+    const s = 1 / (2.2 * this.dx);
+    for (let i = 0; i < this.n; i++) {
+      const key = `${Math.floor(this.x[i] * s)}:${Math.floor(this.y[i] * s)}:${Math.floor(this.z[i] * s)}`;
+      let id = cells.get(key);
+      if (id === undefined) { id = this.nextId++; cells.set(key, id); }
+      this.id[i] = id;
+    }
+    this.pairT.clear(); this.merged.clear(); this.contact.clear();
     this.stirTimer = 4;
   }
 
@@ -837,7 +1089,19 @@ export class Wax {
   }
   get meanT() { let s = 0; for (let i = 0; i < this.n; i++) s += this.T[i]; return s / this.n; }
   get maxT() { let v = -Infinity; for (let i = 0; i < this.n; i++) if (this.T[i] > v) v = this.T[i]; return v; }
-  get maxRise() { let v = 0; for (let i = 0; i < this.n; i++) if (this.blobVy[i] > v) v = this.blobVy[i]; return v; }
+  get maxRise() {
+    let v = 0;
+    const seen = new Set();
+    for (let i = 0; i < this.n; i++) {
+      const r = this.blob[i];
+      if (seen.has(r)) continue;
+      seen.add(r);
+      // Ignore particle-scale spray. The HUD promises a blob speed, and a
+      // singleton transient is neither a visible blob nor a useful lift event.
+      if (this._bc[r] >= 8 && this.blobVy[i] > v) v = this.blobVy[i];
+    }
+    return v;
+  }
 
   // Volume-weighted mean upward speed over blobs that are actually moving up.
   // maxRise is the fastest particle in the tank at one instant; taken as a

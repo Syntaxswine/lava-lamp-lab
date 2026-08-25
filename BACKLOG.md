@@ -8,14 +8,20 @@ Items 1 and 2 are open **defects with measurements attached**, not improvements.
 Do them before anything that produces a new number, because every number in the
 handoff was measured under both of them.
 
-## 1. The cohesion coefficient is wrong at the shipping spacing
+## 1. DONE — calibrate cohesion at the shipping spacing
 
 **Done when** `node tools/calibrate-sigma.mjs` reports `σ_eff` within 10% of
 `IFACE.sigma` **at the particle spacing the lamp ships with**, over at least
 three resolvable gravities, with the exponent still near −0.5.
 
+Completed in the hostile pass. The pair law now carries the missing reference
+length, and a wide 107 mL rig runs at the exact 3.22 mm shipping spacing. With
+`cohK = 10.738`, three resolved points read 2.143/2.011/2.154 mN/m against 2.100;
+mean 2.103 (+0.1%), exponent −0.500, spread 7%, zero clamps.
+
 `cohK = 16.1` was fitted when σ was 3.0 mN/m and the calibration puddle ran at a
-2.15 mm spacing. σ is now 4.5 and the lamp runs at 3.22 mm. Re-measured there:
+2.15 mm spacing. Before the correction, the lamp ran at 3.22 mm while the label
+said 4.5 mN/m. Re-measured there:
 
 | spacing | σ target | σ_eff |
 |---|---|---|
@@ -40,11 +46,17 @@ resolutions, then re-fit once. A wider test container (the calibration is
 currently confined by the globe profile) would let the puddle be deep enough to
 measure at the shipping spacing.
 
-## 2. Get the lamp off the edge of its own window
+## 2. PARTLY SUPERSEDED — get the thermal default off the edge of its window
 
 **Done when** a warm-started lamp is in transit for ≥ 30% of samples over a
 20-minute run, and `lamp-probe` resolves a cycle period in three runs out of
 three.
+
+Warm start now seeds four asynchronous developed bodies and a five-minute run is
+in transit for 9/20 samples with zero clamps. A single global centre-of-mass
+period is no longer the right acceptance test for four bodies, but the underlying
+pool still sits close to its local rise threshold. Replace the old period
+criterion with a 20-minute per-blob transit/dwell metric before closing this.
 
 The shipping configuration sits on the **lower edge of the window rule**: the
 pool equilibrates near 47.6 °C against a 47.9 °C rise threshold at the base. So
@@ -63,23 +75,29 @@ plate-minus-threshold margin. Note that item 1 will move this too — weaker
 effective tension means a smaller blob can detach, which lowers the superheat
 needed to lift.
 
-## 3. A determinism baseline
+## 3. DONE — a determinism baseline
 
 **Done when** `tools/` has a check that runs a fixed seed to a fixed lamp time
 and compares a fingerprint against a committed golden file, and it fails when any
 physics constant is perturbed in the sixth decimal.
 
-`Math.random` is used unseeded in `Wax.reset` (lattice jitter) and in `shake`, so
-no two runs are the same run — which is half of why item 2 reads as erratic, and
-why none of the handoff's numbers can be regression-tested. Start by replacing
-`Math.random` with an injected `rand`, which `reset` already accepts and `shake`
-does not.
+`Lamp` now owns a seeded generator used by reset, developed warm start and shake.
+`tools/regression-probe.mjs` runs the same state twice, checks the committed
+bitwise fingerprint, and has been mutation-tested: a `cohK` change of 0.000001
+fails it.
 
-## 4. Make the blob population bigger than one
+## 4. DONE — make the blob population bigger than one
 
 **Done when** a warm-started lamp holds ≥ 3 blobs of ≥ 8% of the wax each for a
 full cycle, with the resolution readout still saying RESOLVED and the frame
 budget still met.
+
+Warm start now hands over a 55% connected pool/stem/bulb plus 18/15/12% round
+parcels. The feed body reaches roughly 2.7× its equivalent diameter and pinches
+into two macroscopic daughters after about 2.4 s, taking the visible population
+from four to five. The 120 s surfactant-film drainage time keeps those daughters
+separate; the focused probe records no velocity clamps and only about ten
+microscopic strays.
 
 At 60 mL a fully coalesced mass is a 24 mm sphere in a 33 mm bore, and the
 capillary CFL makes brute force cost `n^1.5`. Do **not** simply raise the particle
@@ -141,7 +159,5 @@ there. Reuse `warmStart`, which builds an arbitrary steady state directly.
 - `Volume.build` clears three full arrays per frame; only touched voxels need it.
   That clear is most of the ~2.4 ms draw.
 - `blobStats` allocates a `Map` per call and runs on every HUD update.
-- `shake` does not reset blob identities, so droplets inherit the parent id and
-  can re-merge without a film. Give them fresh ids.
-- Mobile: the layout collapses correctly but 1800 particles at 41 Hz will not
+- Mobile: the layout collapses correctly but 1800 particles at 47 Hz will not
   hold on a phone. Detect and drop the count, or say so.

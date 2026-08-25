@@ -20,8 +20,21 @@ import { HEAT, WAX, AQ, SOLVER, IFACE, T_CROSS, rhoWax, rhoAq, GEO } from './par
 const DT = 1 / 120;               // mechanical substep, seconds
 const COM_SAMPLE = 0.5;           // seconds between centre-of-mass samples
 
+function seededRandom(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s += 0x6D2B79F5;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export class Lamp {
   constructor(opts = {}) {
+    this.seed = opts.seed ?? 0x1a2b3c4d;
+    this.rand = seededRandom(this.seed);
     this.column = new Column(opts.cells ?? 96);
     this.wax = new Wax(opts.particles ?? SOLVER.particles, opts.waxVolume ?? WAX.volume);
     this.env = {
@@ -38,8 +51,9 @@ export class Lamp {
   }
 
   reset() {
+    this.rand = seededRandom(this.seed);
     this.column.reset(this.env.Tamb);
-    this.wax.reset(this.env.Tamb);
+    this.wax.reset(this.env.Tamb, this.rand);
     this.lampTime = 0;
     this.firstMelt = null;
     this.firstRise = null;
@@ -49,28 +63,25 @@ export class Lamp {
 
   setParticles(n) {
     this.wax = new Wax(n, this.wax.volume);
-    this.wax.reset(this.env.Tamb);
+    this.wax.reset(this.env.Tamb, this.rand);
   }
 
   setWaxVolume(v) {
     this.wax.setVolume(v);
-    this.wax.reset(this.env.Tamb);
+    this.wax.reset(this.env.Tamb, this.rand);
   }
 
   get bulbIn() { return this.env.bulbW * HEAT.fCouple; }
 
   // -------------------------------------------------------------------------
-  // Warm start. A globe this size holds well over a litre of water; with 26 W
-  // going in and about 1.05 W/K leaking out, the thermal time constant is some
-  // 85 minutes and the lamp needs roughly three hours to come up. That is not a
-  // modelling artefact -- it is what the makers of the big lamps tell you, and
-  // the cold start reproduces it honestly.
+  // Warm start. This 486 mL globe has a roughly 48-minute thermal time constant
+  // plus the wax's latent heat, so an honest cold start takes about two hours to
+  // lift. That wait is physical, and the cold-start path reproduces it.
   //
-  // This builds the developed state directly instead: relax the column to the
-  // steady state its own energy budget implies, and put the wax at the fluid
-  // temperature beside it. It is an INITIAL CONDITION, not a simulated history:
-  // during a real three-hour warm-up the wax would be moving, and this skips
-  // that. Everything after the hand-over is fully coupled.
+  // This builds a developed state directly instead: relax the column to the
+  // steady state its own energy budget implies, then seed a pool drawing one
+  // upper bulb plus three smaller bodies. It is an INITIAL CONDITION, not a simulated
+  // history or an animation path. Everything after hand-over is fully coupled.
   // -------------------------------------------------------------------------
   warmStart() {
     this.reset();
@@ -83,11 +94,7 @@ export class Lamp {
       this.column.step(dt, this.bulbIn, this.env.Tamb);
     }
     const w = this.wax;
-    for (let i = 0; i < w.n; i++) {
-      const Tf = this.column.at(w.y[i]);
-      w.T[i] = Math.max(Tf, WAX.Tmelt + 1.5);
-      w.solid[i] = 0;
-    }
+    w.seedDeveloped(this.column, (Tf) => this.riseThreshold(Tf), this.rand);
     this.lampTime = 1200 * dt;
     this.startedWarm = true;
     this.firstMelt = 0;
@@ -282,6 +289,8 @@ export class Lamp {
       droplets,
       biggest: w.biggestBlob,
       meanBlobRadius: mean,
+      maxStretch: big.reduce((a, b) => Math.max(a, b.verticalStretch || 0), 0),
+      pinches: w.pinches,
       maxRise: w.maxRise,
       riseSpeed: w.typicalRise(),
       resolution: this.resolution(),

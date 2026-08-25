@@ -34,8 +34,8 @@ let ff;
 if (warm) {
   lamp.warmStart();
   ff = { skipped: lamp.lampTime, reason: 'warm start (initial condition, not a history)' };
-  console.log(`warm start: column relaxed to steady state, wax molten at the ` +
-    `local fluid temperature`);
+  console.log(`warm start: column relaxed, four-body developed circulation seeded ` +
+    `(initial condition, not a prescribed path)`);
 } else {
   ff = lamp.fastForward(6 * 3600, 5);
   console.log(`fast-forward: skipped ${(ff.skipped / 60).toFixed(1)} min of lamp time, ` +
@@ -69,9 +69,10 @@ for (let s = 1; s <= steps; s++) {
       `plate ${d.Tplate.toFixed(1)}  top ${d.Ttop.toFixed(1)}  ` +
       `wax ${d.waxT.toFixed(1)}/${d.waxTmax.toFixed(1)}  ` +
       `molten ${(d.molten * 100).toFixed(0).padStart(3)}%  ` +
-      `blobs ${String(d.blobs).padStart(3)}  ` +
+      `blobs ${String(d.blobs).padStart(3)}  assist ${d.pinches}  ` +
       `biggest ${String(d.biggest).padStart(4)}p  ` +
       `r ${(d.meanBlobRadius * 1000).toFixed(1).padStart(4)} mm  ` +
+      `stretch ${d.maxStretch.toFixed(2).padStart(4)}x  ` +
       `rise ${(d.riseSpeed * 100).toFixed(2).padStart(5)} cm/s  ` +
       `com ${(d.com * 100).toFixed(0).padStart(3)}%  ` +
       `clamp ${d.clamps}  ${d.window}`);
@@ -84,6 +85,8 @@ console.log(`--- after ${minutes} min of coupled lamp time ---------------------
 console.log(`blobs                 ${d.blobs}   largest ${d.biggest} particles ` +
   `(${(d.biggest * w.Vp * 1e6).toFixed(1)} mL)`);
 console.log(`mean blob radius      ${(d.meanBlobRadius * 1000).toFixed(1)} mm`);
+console.log(`maximum stretch       ${d.maxStretch.toFixed(2)}x vertical/equivalent diameter`);
+console.log(`subgrid pinch assists ${d.pinches}`);
 // A blob spends most of a cycle parked at one end. Taking the median over the
 // whole run therefore measures how long it sits still, not how fast it travels;
 // the comparable number is the median while it is actually in transit.

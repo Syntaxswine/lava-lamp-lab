@@ -35,7 +35,10 @@ was replaced entirely.
 | **Wax charge**, **Particles** | resolution and load | the readout says when the particle count cannot resolve the blobs the parameters call for |
 | **View** | Lamp / Temperature / Rise–sink | the third one colours every parcel by whether it is currently heavier or lighter than the fluid beside it |
 
-Buttons: **Warm start** builds the developed steady state directly. **Cold start**
+Buttons: **Warm start** seeds a developed four-body circulation directly: a hot
+upper bulb drawing a neck from the pool, with three smaller parcels aloft. It is
+an initial condition, not a prescribed animation; the connected feed body then
+elongates and pinches under the normal solver. **Cold start**
 puts a solid plug of wax on a cold plate and makes you wait, like the real thing.
 **Fast-forward** skips the dead time — but only while nothing in the tank could
 possibly rise, and it stops the instant that stops being true. **Shake it** does
@@ -68,8 +71,8 @@ lamp.** Explicit interfacial tension carries a CFL condition
 cost of a second of lamp time goes as **n^1.5** — you pay for the particles and
 again for the shorter step they force. Doubling the count nearly triples the
 bill. The solver here computes its step from that condition every frame, so
-moving the tension slider from 4.5 to 8 mN/m visibly takes it from 41 Hz to
-54 Hz.
+moving the tension slider from 2.1 to 8 mN/m visibly takes it from 47 Hz to
+about 92 Hz.
 
 ## Verifying it
 
@@ -78,7 +81,9 @@ node tools/column-probe.mjs 25 22
 node tools/closure-sweep.mjs
 node tools/calibrate-sigma.mjs
 node tools/solver-probe.mjs
+node tools/shape-probe.mjs
 node tools/lamp-probe.mjs 9 1800 25 22 warm
+node tools/regression-probe.mjs
 ```
 
 Three of these refuse to answer rather than answer badly.
@@ -97,38 +102,37 @@ buoyant, because with no Δρ there is no capillary length to compare against, a
 the floored value came out as a confident *resolved* about a quantity that was
 never measured.
 
-Everything calibrated is labelled as calibrated, in `js/params.js`, next to what
-it was calibrated against — **including the one that is currently wrong.** The
-cohesion coefficient was fitted at a 2.15 mm particle spacing and the lamp ships
-at 3.22 mm; re-measured there, the effective interfacial tension is 1.9 mN/m
-against a nominal 4.5. Pairwise SPH surface tension is resolution dependent, the
-direction matches the known `dx^-2` vs `dx^-1` scaling flaw, and fixing it moves
-the timestep and every measured number with it. It is written up in PHYSICS.md
-§4.6 and is the top item in [BACKLOG.md](BACKLOG.md) rather than quietly
-retuned.
+Everything calibrated is labelled as calibrated in `js/params.js`, next to what
+it was calibrated against. The cohesion law now carries the missing resolution
+length, and the calibration runs in a wide 107 mL vessel at the lamp's shipping
+3.22 mm spacing. Across three resolved gravities it reads **2.143, 2.011 and
+2.154 mN/m** against the 2.100 control (mean 2.103), with a thickness exponent of
+exactly −0.500 and no clamp events. The rig and the earlier
+false 1.9 mN/m result are written up in PHYSICS.md §4.6.
 
 ## Known limits
 
-The default configuration **is** resolved — 20 mm capillary blobs against a
-9.7 mm floor — but only because the globe, the wax charge and the interfacial
+The default configuration **is** just resolved — roughly 9.9 mm capillary radius
+against a 9.7 mm floor at peak buoyancy — but only because the globe, the wax charge and the interfacial
 tension were all chosen to put it there, and the readout flips to UNDER-RESOLVED
 the moment you move them. The first configuration tried, a 16.3-inch globe with
 240 mL of wax, was under-resolved by 2.6× and would have needed ~44,000
 particles.
 
-The blob count is one, not six. At 60 mL a fully coalesced mass is a 24 mm sphere
-in a 33 mm bore, and a five-blob population needs a particle count the CFL
-scaling puts out of reach.
+Warm start is now a deliberately constructed developed-state initial condition:
+a connected pool/stem/upper bulb plus three smaller parcels. Their paths are not
+prescribed; the coupled solver owns every step after hand-over. In the focused
+probe the connected body grows from **2.13× to 2.73×** its equivalent diameter,
+then breaks from 990 particles into daughters of 564 and 418 particles at
+2.30 s. The population remains at five visible bodies, reaches 1.53× deformation
+again after the first ten seconds, and records **zero** velocity clamps. Cold
+start remains the honest solid-plug experiment.
 
-**And it does not cycle reliably.** Three warm-start runs of the identical
-configuration: one resolved a 128 s period, two refused to name one at all — 8
-transit samples out of 88 across 22 minutes of lamp time. The instrument was
-right to refuse each time. The cause is the shipping configuration sitting on the
-**lower edge of its own window rule**: the pool equilibrates at 47.6 °C against a
-47.9 °C rise threshold, so the crossing is governed by a residual heating rate of
-a few hundredths of a kelvin per minute and the dwell dominates everything. Also
-nothing is seeded, so no two runs are the same run. Both are in
-[BACKLOG.md](BACKLOG.md).
+A four-blob asynchronous lamp need not have one globally coherent period, so the
+spectral cycle instrument can still refuse even while blobs are plainly moving.
+The fixed seed and committed state fingerprint make that refusal reproducible.
+The largest remaining physical simplification is the 1-D aqueous temperature
+field: it carries return volume but not a three-dimensional warm wake.
 
 Full model, closures, calibrations and the rest:
 [docs/PHYSICS.md](docs/PHYSICS.md).

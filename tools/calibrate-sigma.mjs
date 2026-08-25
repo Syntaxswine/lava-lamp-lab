@@ -36,27 +36,27 @@
 // many particle layers deep it is, and points below MIN_LAYERS are shown but
 // excluded from the fit rather than quietly averaged in.
 //
-// usage: node tools/calibrate-sigma.mjs [particles] [cohK]
+// usage: node tools/calibrate-sigma.mjs [particles] [cohK] [settle-seconds]
 
 import { Wax } from '../js/wax.js';
 import { WAX, IFACE, SOLVER, GEO, AQ } from '../js/params.js';
 
-const n = Number(process.argv[2] ?? 840);
+const n = Number(process.argv[2] ?? 3200);
 if (process.argv[3]) SOLVER.cohK = Number(process.argv[3]);
+const settleSeconds = Number(process.argv[4] ?? 10);
 
 // CALIBRATE AT THE SPACING THE LAMP RUNS AT.
 //
-// Pairwise SPH surface tension is resolution dependent: the per-pair cohesion
-// acceleration scales as dx^-2 while the Laplace-pressure argument asks for
-// dx^-1, so sigma_eff moves when the particle spacing moves. Calibrating on a
-// puddle at one spacing and then running the lamp at another means the number in
-// params.js describes a configuration nobody uses. The puddle volume is therefore
+// The uncorrected pair acceleration scaled as dx^-2 while the Laplace-pressure
+// argument asks for dx^-1. Wax now carries the missing reference length, but the
+// calibration still runs at the shipping spacing: a transfer law is not an
+// excuse to validate a different configuration. The puddle volume is therefore
 // derived from the lamp's own volume-per-particle rather than fixed.
 //
-// That constrains the test: the puddle has to stay narrower than the globe it is
-// confined by, which caps n. 840 particles at the lamp spacing gives a 28 mL
-// puddle about 20 mm across at the gravities below -- wide relative to its own
-// thickness, and clear of the 27.5 mm wall.
+// The calibration vessel below is deliberately wider than the lamp.  That lets
+// 3200 particles make a 107 mL puddle at the shipping spacing: broad enough for
+// the infinite-puddle thickness law, without wall confinement supplying part of
+// the answer.
 const SPACING3 = WAX.volume / SOLVER.particles;    // m^3 per particle, as shipped
 
 const T0 = 45;
@@ -68,12 +68,31 @@ const bath = {
 
 // Settle a puddle of `volume` under a fixed reduced gravity and return its
 // thickness, measured where it is flat rather than at the rim.
-function puddle(volume, gRed, seconds = 10) {
+function puddle(volume, gRed, seconds = settleSeconds) {
   const wax = new Wax(n, volume);
+  // Calibration needs a flat, wide vessel rather than the lamp's tapered
+  // globe.  At the shipping 3.22 mm spacing the old rig clipped the puddle at
+  // the 27.5 mm foot, so wall confinement contaminated the thickness exactly
+  // where the tool was supposed to isolate capillarity.  Wax caches its wall
+  // profile, which makes a cylindrical calibration vessel a one-line override
+  // without adding test-only branches to the solver.
+  wax.profR.fill(0.060);
+  // This instrument measures the cohesion law, so the surfactant-film state
+  // machine must be absent, not merely assigned zero force.  `disjoin: 0` by
+  // itself still lets a split component acquire a fresh persistent id; those
+  // ids then refuse to bond again and the puddle turns into hundreds of pieces.
+  // Keep one material identity while retaining the normal connected-component
+  // pass for the blob and surface-area diagnostics.
+  wax.relabel = function calibrationRelabel() { this.id.fill(1); };
+  wax.id.fill(1);
   const dx = wax.dx;
-  // start as a squat cylinder wider than it will end up, so it settles DOWN
-  // into the equilibrium rather than spreading out to it
-  const R0 = Math.sqrt(volume / (Math.PI * 0.010));
+  // Start above the analytic thickness so the measurement has to settle down
+  // to the answer.  The old hard-coded 10 mm start was actually *below* every
+  // predicted thickness in this sweep (15--24 mm), contradicting its own
+  // comment and asking a viscous puddle to contract upward in only ten seconds.
+  const predicted = 2 * Math.sqrt(IFACE.sigma / (WAX.rho20 * gRed));
+  const startHeight = 1.35 * predicted;
+  const R0 = Math.sqrt(volume / (Math.PI * startHeight));
   let placed = 0, y = wax.rp;
   while (placed < n && y < GEO.H) {
     const R = Math.min(R0, wax.radiusAt(y) - 1.3 * wax.rp);
@@ -156,7 +175,13 @@ const rho = WAX.rho20;
 const V = n * SPACING3;
 const rows = [];
 const MIN_LAYERS = 4.5;
-for (const gRed of [0.03, 0.05, 0.08]) {
+// Keep the entire sweep comfortably above the 4.5-layer discretisation floor
+// at the shipping spacing. Scale gravity with the requested tension so the
+// analytic puddle thickness (and therefore its resolution) stays fixed when a
+// surfactant-rich default is selected. The old 0.08 point sat on that floor and
+// made the exponent partly a measurement of particle size.
+const gravityScale = IFACE.sigma / 4.5e-3;
+for (const gRed of [0.030, 0.050, 0.075].map((g) => g * gravityScale)) {
   const ac = Math.sqrt(IFACE.sigma / (rho * gRed));
   let r;
   try { r = puddle(V, gRed); } catch (e) { console.log(`  ${gRed}  skipped: ${e.message}`); continue; }

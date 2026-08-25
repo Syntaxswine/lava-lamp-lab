@@ -175,6 +175,18 @@ splits leaves the larger half holding the id and names the smaller half afresh,
 which is how a pinch-off produces a blob whose film has not yet drained against
 its parent.
 
+The connected-component bond uses 1.95 particle spacings, essentially the full
+compact-support neighbourhood. The old 1.75-spacing cutoff declared a drawn
+surface disconnected while its particles were still exchanging pressure and
+capillary force, shedding numerical spray. A second guard handles the opposite
+resolution failure: an hourglass neck thinner than 2.3 spacings can remain
+graph-connected after continuum capillarity would have pinched it. The solver
+bins the cross-section, requires two substantial lobes and an interior population
+below 55% of both shoulders, and requires that condition to persist for two
+seconds before cutting only bonds that cross the unresolved waist. Ordinary
+geometric splits still happen without this correction; fresh persistent ids and
+the surfactant-film pressure then separate the daughters.
+
 ### 4.5 The timestep is not a choice
 
 Explicit surface tension carries its own CFL condition. The shortest capillary
@@ -186,8 +198,10 @@ dt ≤ 0.25 √( ρ h³ / (2π σ) )
 ```
 
 The simulator computes this every frame from the smoothing length and whatever
-the tension slider currently says, and steps at that rate. Move the tension from
-4.5 to 8 mN/m and the solver goes from 41 Hz to 54 Hz by itself.
+the tension slider currently says. It uses a 0.18 safety factor, plus the
+inverse-square-root of the cohesion resolution-transfer factor, rather than
+riding the theoretical 0.25 limit. Move the tension from 2.1 to 8 mN/m and the
+shipping solver goes from 47 Hz to about 92 Hz by itself.
 
 Running past it does not look like divergence. It looks like a velocity clamp
 firing on two-thirds of the particles every step while the lamp merely seems
@@ -228,39 +242,38 @@ and including those points bends the fitted exponent toward zero and inflates σ
 And it will not report a single-gravity answer: `e ~ (Δρ g)^(-1/2)` is the
 signature of capillarity specifically, so the exponent is fitted and checked.
 
-Measured at `cohK = 16.1`, with `σ = 3.0 mN/m` and a **2.15 mm** particle
-spacing: exponent **−0.415** against the required −0.500, σ_eff spread 16% across
-resolved gravities, mean matching the target. Two residuals were known and
-recorded — the measured thickness runs ~10% high because where an SPH free
-surface *lies* is ambiguous to about half a particle radius, and the fitted
-exponent is short of −0.5 because the thinner puddles approach that same floor.
+The first rig got this wrong in three different ways. It fitted at a 2.15 mm
+spacing while the lamp ships at 3.22 mm; its 28 mL puddle was confined by the
+lamp's tapered 27.5 mm foot; and setting the film force to zero did not disable
+the film's persistent topology, so split pieces still refused to bond. Its
+hard-coded 10 mm start was also below every 15–24 mm predicted thickness even
+though the comment claimed the puddle would settle downward. The resulting
+1.9 mN/m “measurement” was partly a reading of the wall, finite drop and initial
+condition.
 
-**And then the coefficient stopped being right, which is the more useful
-finding.** σ is now 4.5 mN/m and the lamp runs at a **3.22 mm** spacing.
-Re-running the calibration *at the spacing the lamp actually uses* reads
+The corrected pair scale carries the missing resolution length:
 
-| spacing | σ target | σ_eff measured |
-|---|---|---|
-| 2.15 mm (the original calibration) | 3.0 mN/m | 3.0 mN/m |
-| 2.15 mm | 4.5 mN/m | 3.0–3.8 mN/m |
-| **3.22 mm (as shipped)** | **4.5 mN/m** | **1.9 mN/m** |
+```
+cohScale = 1 / (rho0² dx cohRefDx),     cohRefDx = 2.15 mm
+```
 
-and at the shipping spacing only one of three reduced gravities is resolvable at
-all — a 28 mL puddle is under five particles deep — so the tool **refuses to
-report a fit**.
+so the pair acceleration transfers as `dx^-1`, matching the Laplace-pressure
+argument, instead of the old `dx^-2`. The calibration now uses 3200 particles in
+a 60 mm-radius cylindrical vessel: a 107 mL puddle at the exact shipping spacing.
+The film identity state machine is bypassed, the puddle starts 35% above the
+analytic height, and only points deeper than 4.5 particle layers enter the fit.
 
-The direction is exactly what the scaling predicts. The per-pair cohesion
-acceleration goes as `dx^-2`, while the Laplace-pressure argument
-(`a_net ~ 2σ/(ρ a dx)`) asks for `dx^-1`. Pairwise SPH surface tension is
-resolution dependent, and a coefficient fitted at one spacing does not carry to
-another.
+At `cohK = 10.738`, target σ = 2.10 mN/m. The sweep gravity scales with the
+requested tension so all target puddles retain the same resolvable thickness:
 
-This is **not** retuned in place. Raising `cohK` by 2.4× raises the stiffness,
-which tightens the capillary CFL by √2.4 — 41 Hz to ~64 Hz, the frame budget from
-39% to ~60% — and changes blob detachment, invalidating every measured number in
-the handoff. It is [BACKLOG.md](../BACKLOG.md) item 1, and the honest reading of
-the lamp today is that its wax is held together by rather less tension than the
-panel says.
+| reduced gravity | thickness | σ_eff |
+|---|---:|---:|
+| 0.014 m/s² | 24.61 mm | 2.143 mN/m |
+| 0.023 m/s² | 18.46 mm | 2.011 mN/m |
+| 0.035 m/s² | 15.61 mm | 2.154 mN/m |
+
+The mean is **2.103 mN/m** (+0.1%), the thickness exponent is **−0.500**, the
+spread is 7%, and all three runs record zero clamps.
 
 Two lessons worth keeping. **Re-run every calibration after every model change**:
 adding the anti-coalescence film shattered the calibration puddle into 71 pieces
@@ -281,13 +294,13 @@ of magnitude depending on which crossings you kept.
 that.** The capillary length `a_c = √(σ/Δρ g)` is the radius at which buoyancy
 tears a blob off the pool, and SPH needs about three particle spacings across a
 radius before it can hold a free surface at that scale. The default sits inside
-that bound: `a_c ≈ 20 mm` against a `3·dx = 9.7 mm` floor, from a **measured**
-Δρ of 1.1 kg/m³, and the readout says RESOLVED.
+that bound: `a_c ≈ 9.9 mm` against a `3·dx = 9.7 mm` floor, from a **measured**
+Δρ near 2.2 kg/m³ at peak lift, and the readout says RESOLVED by a narrow margin.
 
 Getting there took three changes, all stated rather than hidden. The globe was
 scaled down from 16.3 to 14.5 inches; the wax charge is 60 mL, on the light side
-of a real lamp's 15–25%; and the default interfacial tension sits at the top of
-the 1–5 mN/m band rather than the middle. Each is a physically legitimate point
+of a real lamp's 15–25%; and the default interfacial tension is 2.1 mN/m inside
+the 1–5 mN/m surfactant-rich band. Each is a physically legitimate point
 in the parameter space, and each was picked because it is where the solver can
 express its own capillary length.
 
@@ -303,30 +316,24 @@ buoyant in the tank there is no Δρ to build a capillary length from, and repor
 a floored value came out as a confident *resolved* about a quantity that was
 never measured. It now says so instead.
 
-**The blob count is one, not six.** At 60 mL a fully coalesced mass is a 24 mm
-sphere in a 33 mm bore. The film model (§4.4) keeps it from swallowing everything,
-but a real lamp's five-or-six-blob population needs a particle count the CFL
-scaling puts out of reach.
+**Warm start is constructed.** It seeds a developed circulation with one
+connected pool/stem/upper bulb and three smaller parcels aloft. Their positions
+are an initial condition, not paths: the normal PBF, buoyancy, drag, heat
+exchange, return flow and surfactant film own the run immediately after
+hand-over. Cold start still begins from the single solid plug and invents no
+developed history.
 
-**And the cycle is not a reliable number.** Three warm-start runs of the identical
-configuration:
+The focused shape probe measures the connected feed body at 2.13× its equivalent
+spherical diameter initially and about 2.7× immediately before it divides into
+two macroscopic daughters. Five visible bodies remain after the split, with only
+about ten microscopic strays and no velocity clamps. The 120 s film drainage
+time prevents the daughters from immediately undoing that topology change.
 
-| run | lamp time | cycle | in transit | rise while moving |
-|---|---|---|---|---|
-| A | 9 min | **128 s** | — | — |
-| B | 9 min | *not resolved* | 4 / 36 samples | 0.40 cm/s |
-| C | 22 min | *not resolved* | 8 / 88 samples | 0.38 cm/s |
-
-The spectral gate refused twice and was right to. The lamp is in transit for
-roughly a tenth of its life and parked for the rest, and the dwell is what varies.
-
-The cause is not the instrument: **the shipping configuration sits on the lower
-edge of its own window rule.** The pool equilibrates near 47.6 °C while the rise
-threshold at the base is 47.9 °C, so whether and when it lifts is decided by a
-residual heating rate of hundredths of a kelvin per minute. That is a
-physically real state — a lamp running slightly too cool is exactly this — but it
-is a poor default, and combined with the unseeded lattice jitter it means no two
-runs agree. Both are in [BACKLOG.md](../BACKLOG.md).
+**A cycle is not necessarily one number.** Several asynchronous bodies do not have
+to put one prominent peak in the global centre-of-mass spectrum. The detector
+still refuses when that peak is absent; motion is reported separately as transit
+fraction and visible-blob speed. Runs are now seeded and checked against a
+committed bitwise fingerprint, so a refusal is reproducible rather than luck.
 
 **Other simplifications, stated:**
 
@@ -351,17 +358,18 @@ runs agree. Both are in [BACKLOG.md](../BACKLOG.md).
 | wax specific heat | 2100 J/kg/K | liquid paraffin, 2.1–2.3 kJ/kg/K |
 | wax latent heat | 200 kJ/kg | paraffin fusion, 180–230 kJ/kg |
 | wax melting point | 34 °C | soft oil-extended blend; must stay below T_top |
+| wax viscosity | 15 mPa·s | viscous surfactant-rich blend; preserves a drawn neck |
 | aqueous density at 20 °C | 1000 kg/m³ | water + glycol + salt |
 | aqueous expansion β | 3.8e-4 /K | water 2.1e-4 at 20 °C, 4.6e-4 at 50 °C; glycol ~6e-4 |
 | aqueous viscosity | 10 mPa·s | glycol-thickened |
-| interfacial tension | 4.5 mN/m | oil/water with surfactant, 1–5 mN/m; top of the band, §5 |
+| interfacial tension | 2.1 mN/m | oil/water with surfactant, 1–5 mN/m, §5 |
 | bulb | 25 W | the stock bulb for a globe this size |
 | coupled fraction | 0.65 | **calibrated** to the measured steady state |
 | glass–room coefficient | 19 W/m²/K | **calibrated**; lumps convection, radiation, the metal cap |
 | convection closure C | 1.8 | **calibrated**, `tools/closure-sweep.mjs`; refitted per geometry |
-| cohesion coefficient | 16.1 | **calibrated**, `tools/calibrate-sigma.mjs` |
+| cohesion coefficient | 10.738 | **calibrated**, `tools/calibrate-sigma.mjs` |
 | particles | 1800 | the most the capillary CFL affords in real time, §4.5 |
-| solver step | 1/41 s | **derived**, not chosen: the capillary CFL, §4.5 |
+| solver step | 1/47 s | **derived**, with a conservative capillary-CFL safety factor, §4.5 |
 
 ## 7. The instruments
 
@@ -371,7 +379,9 @@ runs agree. Both are in [BACKLOG.md](../BACKLOG.md).
 | `closure-sweep.mjs` | steady state vs the convection constant | — |
 | `calibrate-sigma.mjs` | σ from puddle thickness, and the exponent | report from under-resolved puddles, or from one gravity |
 | `solver-probe.mjs` | the density projection, step by step from a cold plug | — |
+| `shape-probe.mjs` | peak elongation, neck scale and macroscopic split events | — |
 | `lamp-probe.mjs` | the whole lamp: window, blobs, rise speed, cycle | name a cycle period whose spectral peak is not prominent |
+| `regression-probe.mjs` | fixed-seed state and configuration fingerprint | accept a changed physical state without baseline review |
 
 The cycle period comes off a detrended spectrum of the wax centre of mass. An
 earlier version counted up-swings with a minimum gap between them and dutifully

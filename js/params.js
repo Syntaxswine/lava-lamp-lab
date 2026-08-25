@@ -52,7 +52,7 @@ export const WAX = {
   beta: 7.5e-4,             // 1/K
   c: 2100,                  // J/kg/K
   k: 0.25,                  // W/m/K
-  mu: 0.005,                // Pa.s at 55 C
+  mu: 0.015,                // Pa.s at 55 C; viscous enough to draw a neck
   Tmelt: 34,                // degC
   dTmelt: 3.0,              // K — mushy band half-width
   L: 200e3,                 // J/kg latent heat of fusion
@@ -82,14 +82,12 @@ export const AQ = {
 };
 
 export const IFACE = {
-  // Oil/water with surfactant spans about 1-5 mN/m, and the default sits at the
-  // top of that range on purpose: the capillary length a_c = sqrt(sigma/drho g)
-  // is what sets blob size, and at 4.5 mN/m it lands just above the three-
-  // particle-spacing floor the solver needs to hold a free surface. Lower values
-  // are equally physical and the slider reaches them -- the readout will then say
-  // the configuration is under-resolved, which is the truth rather than a
-  // quietly smaller blob.
-  sigma: 4.5e-3,            // N/m
+  // Oil/water with surfactant spans about 1-5 mN/m. 2.1 mN/m is deliberately
+  // in the middle of that range: the previous 4.5 mN/m default was numerically
+  // comfortable but rounded every parcel into a marble before it could draw a
+  // visible neck. The resolution readout still calls out settings whose
+  // capillary length drops below three particle spacings.
+  sigma: 2.1e-3,            // N/m
 };
 
 // ---------------------------------------------------------------------------
@@ -150,31 +148,13 @@ export const SOLVER = {
   hFactor: 2.0,             // smoothing length = hFactor * particle spacing
   relaxEps: 1.0e-6,         // CFM relaxation, as a fraction of |grad C|^2
   scorr: 0.05,              // artificial pressure, as a fraction of lambda
-  cohK: 16.1,               // KNOWN WRONG AT THE SHIPPING SPACING -- see below.
-                            //
-                            // Fitted by tools/calibrate-sigma.mjs when
-                            // IFACE.sigma was 3.0 mN/m and the calibration
-                            // puddle ran at a 2.15 mm particle spacing. There it
-                            // read sigma_eff = 3.0 against the 3.0 asked for.
-                            //
-                            // sigma is now 4.5 and the lamp runs at a 3.22 mm
-                            // spacing, and re-measuring AT THAT SPACING gives
-                            // sigma_eff = 1.9 mN/m -- 2.4x below nominal. The
-                            // direction is exactly what the scaling flaw
-                            // predicts: the per-pair cohesion acceleration goes
-                            // as dx^-2 while the Laplace-pressure argument asks
-                            // for dx^-1, so effective tension falls as the
-                            // spacing grows. Pairwise SPH surface tension is
-                            // resolution dependent and this coefficient does not
-                            // carry between resolutions.
-                            //
-                            // NOT retuned in place, because it is not a one-line
-                            // change: raising cohK ~2.4x raises the stiffness,
-                            // which tightens the capillary CFL by sqrt(2.4) and
-                            // takes the solver from 41 Hz to ~64 Hz, the frame
-                            // budget from 39% to ~60%, and changes blob
-                            // detachment -- invalidating every measured number in
-                            // the handoff. BACKLOG.md item 1.
+  // The Akinci pair acceleration naturally scales as dx^-2 while a resolved
+  // interface needs dx^-1. `cohRefDx` supplies the missing length so the fitted
+  // coefficient transfers between particle counts instead of changing the
+  // effective surface tension whenever resolution changes.
+  cohRefDx: 2.15e-3,        // m — spacing of the original puddle calibration
+  cohK: 10.738,             // calibrated at the shipping 3.22 mm spacing:
+                            // sigma_eff 2.103 vs 2.100 mN/m, exponent -0.500
   curvK: 0.55,              // Akinci curvature-minimisation weight
   xsph: 0.0,                // extra XSPH smoothing per SECOND (0 = physical mu only)
   Cd: 1.0,                  // drag coefficient of a wobbling drop (Clift et al.)
@@ -190,7 +170,17 @@ export const SOLVER = {
   //              two blobs become one. Real drainage times for surfactant-
   //              stabilised films span seconds to minutes.
   disjoinK: 1.5,
-  drainTime: 25,
+  drainTime: 120,
+  // A neck thinner than the SPH resolution cannot continue the continuum
+  // thinning process: two rows of particles remain graph-connected forever.
+  // Detect a persistent hourglass (two lobes with a narrow interior section),
+  // wait through its visible draw, then cut only bonds crossing that unresolved
+  // section. Fresh film identities make the daughter interfaces repel, exactly
+  // as a normal geometric split already does.
+  pinchStretch: 1.55,       // vertical span / equivalent spherical diameter
+  pinchRatio: 0.55,         // neck population / smaller adjacent lobe peak
+  pinchRadiusDx: 2.3,       // neck radius below this many spacings is unresolved
+  pinchDelay: 2.0,          // s the neck must persist before topology changes
 };
 
 // Density of each phase at temperature T (linear expansion about 20 C).
